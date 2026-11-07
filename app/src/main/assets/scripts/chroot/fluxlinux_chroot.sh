@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# fluxlinux-chroot v3.0
+# fluxlinux-chroot v3.1
 # SSOT chroot runner for NativeCode Debian 13 (requires root).
 # Do not nest this under run_debian13_root.sh — it already owns mounts + one chroot.
 # Guest entry always uses env -i + Debian PATH (never Android /system PATH).
@@ -24,7 +24,7 @@
 #   FLUX_CHROOT  FLUX_PACKAGE  FLUX_HOST_TMP  FLUX_PREFIX  FLUX_BB  FLUX_SHELL
 set -u
 
-VERSION_STR="fluxlinux-chroot v3.0"
+VERSION_STR="fluxlinux-chroot v3.1"
 # Prefer caller-pinned env (RootShell / start_gui). Fallbacks cover both store flavors.
 if [ -z "${FLUX_PACKAGE:-}" ]; then
   if [ -d /data/data/com.zenithblue.fluxlinux/files/usr ]; then
@@ -182,121 +182,52 @@ ensure_sticky_tmp() {
   chmod 1777 "$FLUX_CHROOT/var/tmp" 2>/dev/null || true
 }
 
-# devpts with usable ptmx (stock mount often leaves ptmxmode=000 → c--------- pts/ptmx).
-# Root still "passes" test -w on mode 000 — check numeric mode, not -w.
+# Keep the app's already-open terminal visible inside the guest. A new devpts
+# instance would make ttyname(stdin) fail and break tmux/sudo terminal handling.
+# /dev/ptmx is the Android character device; never chmod the shared host node.
 ensure_devpts() {
-  _pts="$FLUX_CHROOT/dev/pts"
-  mkdir -p "$_pts" 2>/dev/null || true
-  if is_mounted "$_pts"; then
-    _perm=""
-    if [ -c "$_pts/ptmx" ]; then
-      _perm=$($BB stat -c '%a' "$_pts/ptmx" 2>/dev/null || stat -c '%a' "$_pts/ptmx" 2>/dev/null || echo "")
-    fi
-    # 0 / 000 / empty missing → heal once (no mount storm: single umount+remount)
-    case "$_perm" in
-      ""|0|000)
-        $BB umount "$_pts" 2>/dev/null || $BB umount -l "$_pts" 2>/dev/null || true
-        ;;
-    esac
-  fi
-  if ! is_mounted "$_pts"; then
-    $BB mount -t devpts devpts "$_pts" -o newinstance,ptmxmode=0666,mode=0620 2>/dev/null \
-      || $BB mount -t devpts devpts "$_pts" -o ptmxmode=0666,mode=0620 2>/dev/null \
-      || $BB mount -t devpts -o ptmxmode=0666,mode=0620 devpts "$_pts" 2>/dev/null \
-      || $BB mount -t devpts devpts "$_pts" 2>/dev/null \
-      || true
-  fi
-  if [ ! -c "$FLUX_CHROOT/dev/ptmx" ] && [ -c "$_pts/ptmx" ]; then
-    $BB ln -sf pts/ptmx "$FLUX_CHROOT/dev/ptmx" 2>/dev/null || true
-  fi
-  unset _pts _perm
+  bind_if_missing /dev/pts "$FLUX_CHROOT/dev/pts"
+  [ -c "$FLUX_CHROOT/dev/ptmx" ] || die "host ptmx device unavailable"
 }
 
 # --- mount lock (M16) --------------------------------------------------------
-# One copy each in fluxlinux_chroot.sh (ensure_mounts), stop_*_gui.sh and
-# uninstall_*_chroot.sh; keep them identical. A mkdir lock inside the
-# (root-owned) rootfs; the holder records "pid boot_id epoch" in ./owner. A lock
-# is stale when its holder is gone (or is no FluxLinux script: pid reuse), it
-# is from an earlier boot (the dir lives on /data), it is older than 30 s
-# (holders keep it for seconds), or it stayed owner-less for ~3 s (holder
-# killed between mkdir and the owner write). Stale locks are broken under a
-# second mkdir mutex and re-checked there, so only one waiter breaks a lock and
-# nobody breaks a fresh one.
+# Kernel-owned lock, shared by launcher/stop/uninstall. Keep all copies identical.
+# The persistent flock file must never be removed while this rootfs is in use:
+# replacing its inode would allow two independent locks. The old directory is
+# now diagnostic only and can be reclaimed after obtaining the kernel lock.
 lock_owner_now() {
   printf '%s %s %s\n' "$$" \
     "$(cat /proc/sys/kernel/random/boot_id 2>/dev/null)" "$(date +%s 2>/dev/null)"
 }
-
-# 0 when lock dir $1 is stale; $2 = consecutive polls it was seen owner-less.
-lock_is_stale() {
-  _rec=$(cat "$1/owner" 2>/dev/null)
-  if [ -z "$_rec" ]; then
-    [ "$2" -ge 15 ]
-    return
-  fi
-  _lpid=${_rec%% *}
-  _rest=${_rec#* }
-  _lboot=${_rest%% *}
-  _lts=${_rest#* }
-  [ "$_lboot" = "$(cat /proc/sys/kernel/random/boot_id 2>/dev/null)" ] || return 0
-  case "$_lts" in ''|*[!0-9]*) return 0 ;; esac
-  _now=$(date +%s 2>/dev/null)
-  case "$_now" in
-    ''|*[!0-9]*) ;;
-    *) [ $((_now - _lts)) -gt 30 ] && return 0 ;;
-  esac
-  case "$_lpid" in ''|*[!0-9]*) return 0 ;; esac
-  [ -d "/proc/$_lpid" ] || return 0
-  grep -q -e fluxlinux_chroot -e _gui.sh -e _chroot.sh "/proc/$_lpid/cmdline" 2>/dev/null \
-    || return 0
-  return 1
-}
-
-mount_lock() {
-  _lk="$1/.flux_mount.lock"
-  _lw=0
-  _empty=0
-  _bw=0
-  while ! mkdir "$_lk" 2>/dev/null; do
-    [ "$_lw" -ge 60 ] && return 1
-    _lw=$((_lw + 1))
-    if [ -s "$_lk/owner" ]; then _empty=0; else _empty=$((_empty + 1)); fi
-    if lock_is_stale "$_lk" "$_empty"; then
-      if mkdir "$_lk.break" 2>/dev/null; then
-        _bw=0
-        # Re-check under the mutex: another waiter may have replaced the lock;
-        # an owner-less one must stay owner-less (a fresh holder writes at once).
-        [ -s "$_lk/owner" ] || sleep 0.3 2>/dev/null || sleep 1
-        if lock_is_stale "$_lk" "$_empty"; then
-          rm -rf "$_lk" 2>/dev/null
-          if mkdir "$_lk" 2>/dev/null; then
-            lock_record "$_lk"
-            rmdir "$_lk.break" 2>/dev/null
-            return 0
-          fi
-        fi
-        rmdir "$_lk.break" 2>/dev/null
-        _empty=0
-        continue
-      fi
-      # A breaker holds the mutex for well under a second; a leftover one is stale.
-      _bw=$((_bw + 1))
-      [ "$_bw" -ge 10 ] && { rmdir "$_lk.break" 2>/dev/null; _bw=0; }
-    fi
-    sleep 0.2 2>/dev/null || sleep 1
-  done
-  lock_record "$_lk"
-}
-
-# The owner record appears atomically (temp + rename), never half-written.
 lock_record() {
   lock_owner_now > "$1/owner.$$" && mv -f "$1/owner.$$" "$1/owner"
 }
-
-# Release only a lock this process still owns (a stale-broken one may be another's now).
+flux_flock() {
+  # Android mksh marks saved descriptors CLOEXEC; explicitly export FD 9.
+  if [ -n "${BB:-}" ]; then "$BB" flock "$@" 9>&9; else flock "$@" 9>&9; fi
+}
+mount_lock() {
+  _lk="$1/.flux_mount.lock"
+  _lf="$1/.flux_mount.flock"
+  [ ! -L "$_lf" ] && { [ ! -e "$_lf" ] || [ -f "$_lf" ]; } || return 1
+  (umask 077; : >> "$_lf") || return 1
+  exec 9>> "$_lf" || return 1
+  _lw=0
+  while ! flux_flock -xn 9; do
+    [ "$_lw" -ge 60 ] && { exec 9>&-; return 1; }
+    _lw=$((_lw + 1))
+    sleep 0.2 2>/dev/null || sleep 1
+  done
+  if ! { rm -rf "$_lk" && mkdir -m 700 "$_lk" && lock_record "$_lk"; }; then
+    flux_flock -u 9; exec 9>&-; return 1
+  fi
+  return 0
+}
 mount_unlock() {
   _rec=$(cat "$1/.flux_mount.lock/owner" 2>/dev/null)
   [ "${_rec%% *}" = "$$" ] && rm -rf "$1/.flux_mount.lock" 2>/dev/null
+  flux_flock -u 9 2>/dev/null
+  exec 9>&-
   return 0
 }
 # --- end mount lock -----------------------------------------------------------
@@ -323,11 +254,7 @@ ensure_mounts() {
     "$FLUX_CHROOT/tmp" "$FLUX_CHROOT/mnt/host-tmp" "$FLUX_CHROOT/sdcard" \
     "$FLUX_HOST_TMP" 2>/dev/null || true
 
-  # Soft remount /data for dev,suid (KSU/Magisk; fail soft)
-  /system/bin/mount -o remount,dev,suid /data >/dev/null 2>&1 \
-    || $BB mount -o remount,dev,suid /data >/dev/null 2>&1 \
-    || $BB mount -o remount,dev,suid / >/dev/null 2>&1 \
-    || true
+  # flux-mntns sets dev/suid on the private rootfs bind only.
 
   bind_if_missing /dev "$FLUX_CHROOT/dev"
   bind_if_missing /sys "$FLUX_CHROOT/sys"
@@ -1080,12 +1007,16 @@ case "$MODE" in
     echo "$VERSION_STR"
     exit 0
     ;;
-  mount|login|sh|exec|b64|links|links-status) ;;
+  mount|login|sh|exec|b64|links|links-status|host-b64) ;;
   -h|--help|help) usage ;;
   *) die "unknown mode: $MODE" ;;
 esac
 
 require_root
+
+# All chroot operations share the protected private mount namespace.
+. "$(dirname "$0")/flux_namespace.sh" || exit 125
+flux_namespace_enter run "${FLUX_CHROOT}" "$MODE" "$@"
 resolve_bb || die "root-capable busybox not found"
 
 # Flag parse: collect until -- or end; modes sh/exec/b64 need --
@@ -1095,6 +1026,14 @@ USER_NAME=""
 LOGIN_SHELL="${FLUX_SHELL:-zsh}"
 
 case "$MODE" in
+  host-b64)
+    # SAF file operations need Android tools and guest mount visibility, while
+    # retaining binary stdin/stdout. Decode the command without consuming stdin.
+    [ "$#" = 2 ] && [ "$1" = -- ] || die "host-b64 requires -- PAYLOAD"
+    _host_cmd=$(printf '%s' "$2" | "$BB" base64 -d) || die "invalid host command"
+    ensure_mounts
+    exec /system/bin/sh -c "$_host_cmd"
+    ;;
   mount)
     while [ "$#" -gt 0 ]; do
       case "$1" in

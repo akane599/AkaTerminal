@@ -277,12 +277,12 @@ configure_debian_chroot() {
     progress "Mounting filesystems..."
     # Soft remount: busybox often cannot resolve /data on Magisk/KSU (not fatal)
     # Prefer system mount — busybox often "can't find /data" on KSU (sudo stays nosuid)
-    /system/bin/mount -o remount,dev,suid /data 2>/dev/null || $BB mount -o remount,dev,suid /data 2>/dev/null || $BB mount -o remount,dev,suid / 2>/dev/null || true
+    # flux-mntns sets dev/suid on the private rootfs bind only.
 
     $BB mount --bind /dev "$DEBIANPATH/dev" || /system/bin/mount --bind /dev "$DEBIANPATH/dev" || goodbye
     $BB mount --bind /sys "$DEBIANPATH/sys" || /system/bin/mount --bind /sys "$DEBIANPATH/sys" || goodbye
     $BB mount -t proc proc "$DEBIANPATH/proc" || /system/bin/mount -t proc proc "$DEBIANPATH/proc" || goodbye
-    $BB mount -t devpts devpts "$DEBIANPATH/dev/pts" || /system/bin/mount -t devpts devpts "$DEBIANPATH/dev/pts" || goodbye
+    $BB mount --bind /dev/pts "$DEBIANPATH/dev/pts" || /system/bin/mount --bind /dev/pts "$DEBIANPATH/dev/pts" || goodbye
 
     mkdir -p "$DEBIANPATH/dev/shm"
     $BB mount -t tmpfs -o size=512M,mode=1777 tmpfs "$DEBIANPATH/dev/shm" || /system/bin/mount -t tmpfs -o size=512M,mode=1777 tmpfs "$DEBIANPATH/dev/shm" || goodbye
@@ -491,6 +491,11 @@ main() {
         error "This script must be run as root. Exiting."
         exit 1
     fi
+
+
+# All chroot operations share the protected private mount namespace.
+. "$(dirname "$0")/flux_namespace.sh" || exit 125
+flux_namespace_enter setup "${DEBIANPATH}" "$@"
 
 # resolve root BusyBox (manager built-in; NDK module not required)
 _rr=""

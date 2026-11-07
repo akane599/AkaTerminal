@@ -81,6 +81,21 @@ internal interface RootRunner {
     }
 }
 
+/** Keep SAF's mount guards and file accesses in the same view as the guest.
+ * Otherwise /proc/self/mounts would omit private guest mounts and deletion could
+ * incorrectly be offered for /dev, /proc or the shared-storage bind. */
+internal class ChrootNamespaceRunner(
+    private val context: android.content.Context,
+    private val rootfs: String,
+) : RootRunner {
+    override fun start(script: String): RootJob? {
+        val main = Looper.getMainLooper()
+        check(main == null || main.thread !== Thread.currentThread()) { "Root file access on the main thread" }
+        if (!RootShell.ensureChrootHelper(context)) return null
+        return SuRootRunner.start(RootShell.buildChrootHostCommand(script, rootfs))
+    }
+}
+
 /**
  * [RootRunner] over [RootShell]'s cached su invocation. A failed su resolution is remembered
  * for [NO_ROOT_RETRY_MS] so DocumentsUI polling never turns into a stream of su probes;

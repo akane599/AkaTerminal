@@ -57,7 +57,8 @@ class UbuntuDocumentsProvider : DocumentsProvider() {
         GuestLayout.CHROOT -> {
             val rootfs = ChrootPaths.UBUNTU_CHROOT_PATH
             val scripts = RootScripts(rootfs, busybox = ChrootFilesBusyBox.path(ctx))
-            val root = RootGuestFs(ShellRootOps(SuRootRunner, rootfs, scripts), rootfs)
+            val runner = ChrootNamespaceRunner(ctx, rootfs)
+            val root = RootGuestFs(ShellRootOps(runner, rootfs, scripts), rootfs)
             // Guest links into /sdcard or /storage/emulated/0 reach host shared storage directly
             // (All files access, as in PRoot mode); without access they stay unresolvable.
             val shared = sharedRoot?.absolutePath

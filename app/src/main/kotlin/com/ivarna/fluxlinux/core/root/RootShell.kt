@@ -237,6 +237,9 @@ object RootShell {
     ) : Process() {
         private val killed = AtomicBoolean(false)
 
+        // Cancellation can arrive from the owner and capture loop together. Keep the
+        // su client alive until the first caller has finished walking its descendants.
+        @Synchronized
         fun killTreeThenDestroy() {
             if (killed.compareAndSet(false, true)) killRootTree(rootPid.get(), suInvocation)
             delegate.destroyForcibly()
@@ -525,8 +528,10 @@ object RootShell {
         if (chrootHelperReady.get()) return true
         return try {
             val bbOk = ensureBusyBoxResolver(ctx)
+            val namespaceOk = stageVerified(ctx, ChrootPaths.NAMESPACE_ASSET, ChrootPaths.NAMESPACE_HELPER) &&
+                stageVerified(ctx, ChrootPaths.NAMESPACE_GUARD_ASSET, ChrootPaths.NAMESPACE_GUARD)
             val ok = stageVerified(ctx, ChrootPaths.CHROOT_HELPER_ASSET, ChrootPaths.CHROOT_HELPER)
-            if (!ok || !bbOk) {
+            if (!ok || !bbOk || !namespaceOk) {
                 // The helper sources its stage-dir resolver sidecar: both must be verified.
                 Log.w(TAG, "ensureChrootHelper: stage/verify failed helper=$ok resolver=$bbOk")
                 return false
@@ -707,6 +712,12 @@ object RootShell {
         return buildChrootHelperModeCmd("b64 --user $user -- $b64", chrootPath)
     }
 
+    /** Android-side SAF command in the guest's namespace; raw stdin/stdout stay intact. */
+    internal fun buildChrootHostCommand(script: String, chrootPath: String): String {
+        val payload = java.util.Base64.getEncoder().encodeToString(script.toByteArray(Charsets.UTF_8))
+        return buildChrootHelperModeCmd("host-b64 -- $payload", chrootPath)
+    }
+
     /**
      * Root command running `sh helper <modeArgs>` behind the same self-heal + SHA-256 guard as
      * [buildChrootHelperCmd]. [modeArgs] is spliced verbatim: callers build it from validated
@@ -736,6 +747,7 @@ object RootShell {
         return env + "$SHA_FN; " +
             selfHealSnippet(helper, sha, "fluxlinux_chroot.sh", pkg) +
             selfHealSnippet(BusyBoxPaths.RESOLVER_ON_DEVICE, resolverSha, "resolve_bb.sh", pkg) +
+            namespaceSelfHeal(pkg) +
             helperGuardBody(sha, resolverSha) +
             "sh '$helper' $modeArgs"
     }
@@ -774,7 +786,40 @@ object RootShell {
         "if ! { ${shaMatches(ChrootPaths.CHROOT_HELPER, helperSha)} && " +
             "${shaMatches(BusyBoxPaths.RESOLVER_ON_DEVICE, resolverSha)}; }; then " +
             "echo '[RootShell] ${ChrootPaths.CHROOT_HELPER} or its resolver missing or failed SHA-256 check" +
-            " — reinstall chroot or open a chroot session once' >&2; exit 127; fi; "
+            " — reinstall chroot or open a chroot session once' >&2; exit 127; fi; " +
+            namespaceExecGuard()
+
+    private val namespaceAssets = listOf(
+        ChrootPaths.NAMESPACE_ASSET to ChrootPaths.NAMESPACE_HELPER,
+        ChrootPaths.NAMESPACE_GUARD_ASSET to ChrootPaths.NAMESPACE_GUARD,
+    )
+
+    /** Root command only; caller executes off the main thread or in its own terminal. */
+    fun namespaceExecGuard(): String {
+        val checks = namespaceAssets.map { (asset, dest) ->
+            val sha = expectedSha(asset)
+                ?: return "echo '[FluxLinux] namespace asset hash unavailable' >&2; exit 127; "
+            shaMatches(dest, sha)
+        }.joinToString(" && ")
+        return "$SHA_FN; if ! { $checks; }; then " +
+            "echo '[FluxLinux] namespace helper verification failed' >&2; exit 127; fi; "
+    }
+
+    private fun namespaceSelfHeal(pkg: String): String = namespaceAssets.joinToString("") { (asset, dest) ->
+        expectedSha(asset)?.let { selfHealSnippet(dest, it, asset.substringAfterLast('/'), pkg) }.orEmpty()
+    }
+
+    /** No su on the caller thread. Stage bytes locally, then let the root session copy
+     * and verify them. The native helper is too large for an inline base64 argv. */
+    fun namespaceStagingCommand(ctx: Context): String {
+        val stages = namespaceAssets.map { (asset, dest) ->
+            val sha = checkNotNull(assetSha256(ctx, asset)) { "namespace asset hash unavailable" }
+            val source = checkNotNull(stageAsset(ctx, asset)) { "namespace asset staging failed" }
+            installSnippet(dest, sha, srcWord = "'${source.replace("'", "'\\''")}'")
+        }.joinToString(" && ")
+        return "$SHA_FN; { ${stageDirSnippet()} && $stages; } || " +
+            "{ echo '[FluxLinux] namespace staging failed' >&2; exit 127; }; " + namespaceExecGuard()
+    }
 
     /**
      * Root-shell prefix that must precede every `sh <CHROOT_HELPER> …` (M14): re-verifies the

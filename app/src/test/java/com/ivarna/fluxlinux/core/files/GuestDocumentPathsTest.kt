@@ -10,6 +10,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeFalse
 import org.junit.Before
 import org.junit.Test
 import java.io.File
@@ -61,7 +62,7 @@ class GuestDocumentPathsTest {
 
     /** A guest-absolute target that must not exist on the build host. */
     private fun absentOnHost(path: String): String {
-        assertFalse("test target must not exist on host: $path", File(path).exists())
+        assumeFalse("unsafe on this host: real target exists: $path", File(path).exists())
         return path
     }
 

@@ -199,7 +199,7 @@ object DesktopLauncher {
                 val path = profile?.chrootPath
                     ?: com.ivarna.fluxlinux.core.root.ChrootPaths.CHROOT_PATH
                 Thread {
-                    RootShell.ensureBusyBoxResolver(app)
+                    RootShell.ensureChrootHelper(app)
                     RootShell.resolveBusyBox()
                     // H4: never start (and re-mount) a rootfs being uninstalled.
                     val installed = !com.ivarna.fluxlinux.core.terminal.UninstallSessionFactory
@@ -474,7 +474,7 @@ object DesktopLauncher {
         }
         if (method == "chroot") {
             Thread {
-                RootShell.ensureBusyBoxResolver(app)
+                RootShell.ensureChrootHelper(app)
                 RootShell.resolveBusyBox()
                 main.post { launchStop() }
             }.start()

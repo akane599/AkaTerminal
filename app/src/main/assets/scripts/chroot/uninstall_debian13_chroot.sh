@@ -104,91 +104,44 @@ unmount_under() {
 }
 
 # --- mount lock (M16) --------------------------------------------------------
-# One copy each in fluxlinux_chroot.sh (ensure_mounts), stop_*_gui.sh and
-# uninstall_*_chroot.sh; keep them identical. A mkdir lock inside the
-# (root-owned) rootfs; the holder records "pid boot_id epoch" in ./owner. A lock
-# is stale when its holder is gone (or is no FluxLinux script: pid reuse), it
-# is from an earlier boot (the dir lives on /data), it is older than 30 s
-# (holders keep it for seconds), or it stayed owner-less for ~3 s (holder
-# killed between mkdir and the owner write). Stale locks are broken under a
-# second mkdir mutex and re-checked there, so only one waiter breaks a lock and
-# nobody breaks a fresh one.
+# Kernel-owned lock, shared by launcher/stop/uninstall. Keep all copies identical.
+# The persistent flock file must never be removed while this rootfs is in use:
+# replacing its inode would allow two independent locks. The old directory is
+# now diagnostic only and can be reclaimed after obtaining the kernel lock.
 lock_owner_now() {
-    printf '%s %s %s\n' "$$" \
-        "$(cat /proc/sys/kernel/random/boot_id 2>/dev/null)" "$(date +%s 2>/dev/null)"
+  printf '%s %s %s\n' "$$" \
+    "$(cat /proc/sys/kernel/random/boot_id 2>/dev/null)" "$(date +%s 2>/dev/null)"
 }
-
-# 0 when lock dir $1 is stale; $2 = consecutive polls it was seen owner-less.
-lock_is_stale() {
-    _rec=$(cat "$1/owner" 2>/dev/null)
-    if [ -z "$_rec" ]; then
-        [ "$2" -ge 15 ]
-        return
-    fi
-    _lpid=${_rec%% *}
-    _rest=${_rec#* }
-    _lboot=${_rest%% *}
-    _lts=${_rest#* }
-    [ "$_lboot" = "$(cat /proc/sys/kernel/random/boot_id 2>/dev/null)" ] || return 0
-    case "$_lts" in ''|*[!0-9]*) return 0 ;; esac
-    _now=$(date +%s 2>/dev/null)
-    case "$_now" in
-        ''|*[!0-9]*) ;;
-        *) [ $((_now - _lts)) -gt 30 ] && return 0 ;;
-    esac
-    case "$_lpid" in ''|*[!0-9]*) return 0 ;; esac
-    [ -d "/proc/$_lpid" ] || return 0
-    grep -q -e fluxlinux_chroot -e _gui.sh -e _chroot.sh "/proc/$_lpid/cmdline" 2>/dev/null \
-        || return 0
-    return 1
-}
-
-mount_lock() {
-    _lk="$1/.flux_mount.lock"
-    _lw=0
-    _empty=0
-    _bw=0
-    while ! mkdir "$_lk" 2>/dev/null; do
-        [ "$_lw" -ge 60 ] && return 1
-        _lw=$((_lw + 1))
-        if [ -s "$_lk/owner" ]; then _empty=0; else _empty=$((_empty + 1)); fi
-        if lock_is_stale "$_lk" "$_empty"; then
-            if mkdir "$_lk.break" 2>/dev/null; then
-                _bw=0
-                # Re-check under the mutex: another waiter may have replaced the lock;
-                # an owner-less one must stay owner-less (a fresh holder writes at once).
-                [ -s "$_lk/owner" ] || sleep 0.3 2>/dev/null || sleep 1
-                if lock_is_stale "$_lk" "$_empty"; then
-                    rm -rf "$_lk" 2>/dev/null
-                    if mkdir "$_lk" 2>/dev/null; then
-                        lock_record "$_lk"
-                        rmdir "$_lk.break" 2>/dev/null
-                        return 0
-                    fi
-                fi
-                rmdir "$_lk.break" 2>/dev/null
-                _empty=0
-                continue
-            fi
-            # A breaker holds the mutex for well under a second; a leftover one is stale.
-            _bw=$((_bw + 1))
-            [ "$_bw" -ge 10 ] && { rmdir "$_lk.break" 2>/dev/null; _bw=0; }
-        fi
-        sleep 0.2 2>/dev/null || sleep 1
-    done
-    lock_record "$_lk"
-}
-
-# The owner record appears atomically (temp + rename), never half-written.
 lock_record() {
-    lock_owner_now > "$1/owner.$$" && mv -f "$1/owner.$$" "$1/owner"
+  lock_owner_now > "$1/owner.$$" && mv -f "$1/owner.$$" "$1/owner"
 }
-
-# Release only a lock this process still owns (a stale-broken one may be another's now).
+flux_flock() {
+  # Android mksh marks saved descriptors CLOEXEC; explicitly export FD 9.
+  if [ -n "${BB:-}" ]; then "$BB" flock "$@" 9>&9; else flock "$@" 9>&9; fi
+}
+mount_lock() {
+  _lk="$1/.flux_mount.lock"
+  _lf="$1/.flux_mount.flock"
+  [ ! -L "$_lf" ] && { [ ! -e "$_lf" ] || [ -f "$_lf" ]; } || return 1
+  (umask 077; : >> "$_lf") || return 1
+  exec 9>> "$_lf" || return 1
+  _lw=0
+  while ! flux_flock -xn 9; do
+    [ "$_lw" -ge 60 ] && { exec 9>&-; return 1; }
+    _lw=$((_lw + 1))
+    sleep 0.2 2>/dev/null || sleep 1
+  done
+  if ! { rm -rf "$_lk" && mkdir -m 700 "$_lk" && lock_record "$_lk"; }; then
+    flux_flock -u 9; exec 9>&-; return 1
+  fi
+  return 0
+}
 mount_unlock() {
-    _rec=$(cat "$1/.flux_mount.lock/owner" 2>/dev/null)
-    [ "${_rec%% *}" = "$$" ] && rm -rf "$1/.flux_mount.lock" 2>/dev/null
-    return 0
+  _rec=$(cat "$1/.flux_mount.lock/owner" 2>/dev/null)
+  [ "${_rec%% *}" = "$$" ] && rm -rf "$1/.flux_mount.lock" 2>/dev/null
+  flux_flock -u 9 2>/dev/null
+  exec 9>&-
+  return 0
 }
 # --- end mount lock -----------------------------------------------------------
 
@@ -327,6 +280,11 @@ fi
 # -----------------------------------------------------------------------------
 
 # Check Root
+
+# All chroot operations share the protected private mount namespace.
+. "$(dirname "$0")/flux_namespace.sh" || exit 125
+flux_namespace_enter remove "${DEBIANPATH}" "$@"
+
 if [ "$(id -u)" != "0" ]; then
     error "This script must be run as root."
     exit 1

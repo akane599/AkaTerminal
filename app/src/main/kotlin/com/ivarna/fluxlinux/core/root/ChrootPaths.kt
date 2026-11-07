@@ -56,8 +56,12 @@ object ChrootPaths {
     const val LEGACY_CHROOT_HELPER = "/data/local/tmp/fluxlinux_chroot.sh"
 
     const val CHROOT_HELPER_ASSET = "scripts/chroot/fluxlinux_chroot.sh"
+    const val NAMESPACE_ASSET = "scripts/chroot/flux-mntns"
+    const val NAMESPACE_HELPER = "$ROOT_STAGE_DIR/flux-mntns"
+    const val NAMESPACE_GUARD_ASSET = "scripts/chroot/flux_namespace.sh"
+    const val NAMESPACE_GUARD = "$ROOT_STAGE_DIR/flux_namespace.sh"
     /** Must match first `# fluxlinux-chroot vN` line in the asset. */
-    const val CHROOT_HELPER_VERSION = "fluxlinux-chroot v3.0"
+    const val CHROOT_HELPER_VERSION = "fluxlinux-chroot v3.1"
 
     /** Session executable — must be a system binary (SELinux blocks exec of app-data scripts). */
     const val SESSION_EXEC = "/system/bin/sh"

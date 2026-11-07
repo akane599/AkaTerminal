@@ -53,7 +53,7 @@ class ChrootUninstallScriptTest {
                 awk -v t="${'$'}1" '${'$'}2 != t' "${'$'}FAKE_MOUNTS" > "${'$'}FAKE_MOUNTS.new" &&
                   cat "${'$'}FAKE_MOUNTS.new" > "${'$'}FAKE_MOUNTS"
                 ;;
-              find) exec find "${'$'}@" ;;
+              find|flock) exec "${'$'}cmd" "${'$'}@" ;;
               *) exit 127 ;;
             esac
             """.trimIndent() + "\n",
@@ -129,7 +129,7 @@ class ChrootUninstallScriptTest {
     private fun toolsDir(without: Set<String>): File {
         val dir = File(tmp, "tools").apply { mkdirs() }
         val tools = listOf(
-            "awk", "cat", "dirname", "find", "grep", "kill", "ls", "mkdir", "mv",
+            "awk", "cat", "dirname", "find", "flock", "grep", "kill", "ls", "mkdir", "mv",
             "readlink", "rm", "sleep", "sort",
         )
         for (t in tools - without) {

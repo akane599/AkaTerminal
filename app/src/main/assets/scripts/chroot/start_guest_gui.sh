@@ -4,6 +4,10 @@
 # Paths: app package via FLUX_PACKAGE / TARGET_PREFIX (ivarna or zenithblue). Sticky guest /tmp preserved.
 
 CHROOT_ROOT="${CHROOT_ROOT:-${FLUX_CHROOT:-/data/local/tmp/chrootGuest}}"
+
+# All chroot operations share the protected private mount namespace.
+. "$(dirname "$0")/flux_namespace.sh" || exit 125
+flux_namespace_enter run "${CHROOT_ROOT}" "$@"
 if [ -z "${TARGET_PREFIX:-}" ]; then
   if [ -n "${FLUX_PREFIX:-}" ]; then
     TARGET_PREFIX="$FLUX_PREFIX"
@@ -144,12 +148,11 @@ if [ -f "$HELPER" ]; then
   # The helper also renames a flux-era Ubuntu chroot to akane first (user migration).
   sh "$HELPER" links --user "$USERNAME" 2>&1 | grep -e '^FLUX_LINKS' -e '^FLUX_MIGRATE' -e 'using flux' || true
 else
-  /system/bin/mount -o remount,dev,suid /data 2>/dev/null \
-    || $BB mount -o remount,dev,suid /data 2>/dev/null || true
+  # flux-mntns sets dev/suid on the private rootfs bind only.
   $BB mount --bind /dev "$CHROOT_ROOT/dev" 2>/dev/null || true
   $BB mount --bind /sys "$CHROOT_ROOT/sys" 2>/dev/null || true
   $BB mount -t proc proc "$CHROOT_ROOT/proc" 2>/dev/null || true
-  $BB mount -t devpts devpts "$CHROOT_ROOT/dev/pts" 2>/dev/null || true
+  $BB mount --bind /dev/pts "$CHROOT_ROOT/dev/pts" 2>/dev/null || true
   mkdir -p "$CHROOT_ROOT/dev/shm"
   $BB mount -t tmpfs -o size=512M,mode=1777 tmpfs "$CHROOT_ROOT/dev/shm" 2>/dev/null || true
   mkdir -p "$CHROOT_ROOT/tmp" "$CHROOT_ROOT/mnt/host-tmp"
@@ -188,7 +191,7 @@ else
 fi
 
 # su/sudo need suid on /data (KernelSU guests live under /data/local/tmp).
-/system/bin/mount -o remount,dev,suid /data 2>/dev/null || true
+# flux-mntns sets dev/suid on the private rootfs bind only.
 # TW minirootfs can ship an empty /etc/machine-id; dbus-broker then refuses.
 _midf="$CHROOT_ROOT/etc/machine-id"
 _mid=$(tr -d '[:space:]' < "$_midf" 2>/dev/null || true)

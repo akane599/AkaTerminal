@@ -92,6 +92,8 @@ else
       mv -f \"\$2.stage.\$\$\" \"\$2\" || { rm -f \"\$2.stage.\$\$\"; return 1; }; }; \
     _stage '$ROOT_STOP_SCRIPT' '$ROOT_STOP_STAGED' || { echo 'FluxLinux: [ERROR] cannot stage $ROOT_STOP_NAME' >&2; exit 1; }; \
     _stage '$RESOLVER_SRC' '$RESOLVER_STAGED'; \
+    _stage '$TERMUX_HOME/flux_namespace.sh' '$ROOT_STAGE/flux_namespace.sh' && \
+    _stage '$TERMUX_HOME/flux-mntns' '$ROOT_STAGE/flux-mntns' || { echo 'FluxLinux: namespace staging failed' >&2; exit 125; }; \
     rm -f '/data/local/tmp/$ROOT_STOP_NAME' /data/local/tmp/fluxlinux_resolve_bb.sh 2>/dev/null; \
     DEBIANPATH='$CHROOT_PATH' CHROOT_ROOT='$CHROOT_PATH' FLUX_CHROOT='$CHROOT_PATH' \
     TARGET_PREFIX='$TERMUX_PREFIX' \

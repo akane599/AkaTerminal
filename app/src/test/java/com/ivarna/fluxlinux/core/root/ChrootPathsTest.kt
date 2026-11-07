@@ -10,7 +10,7 @@ class ChrootPathsTest {
 
     @Test
     fun helper_version_is_v30() {
-        assertEquals("fluxlinux-chroot v3.0", ChrootPaths.CHROOT_HELPER_VERSION)
+        assertEquals("fluxlinux-chroot v3.1", ChrootPaths.CHROOT_HELPER_VERSION)
     }
 
     @Test

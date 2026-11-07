@@ -62,6 +62,7 @@ class UninstallSessionCommandTest {
             ?: File("app/src/main/kotlin/com/ivarna/fluxlinux/core/terminal/UninstallSessionFactory.kt")
         val text = src.readText()
         assertTrue(text.contains("RootShell.stageVerified(ctx, asset, \"\${ChrootPaths.ROOT_STAGE_DIR}/\$scriptName\")"))
-        assertTrue(text.contains("RootShell.ensureBusyBoxResolver(ctx)"))
+        assertTrue(text.contains("RootShell.ensureChrootHelper(ctx)"))
+        assertTrue(text.contains("RootShell.namespaceExecGuard()"))
     }
 }

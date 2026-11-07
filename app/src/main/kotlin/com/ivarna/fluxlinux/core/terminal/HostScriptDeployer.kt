@@ -30,7 +30,7 @@ object HostScriptDeployer {
      * A current marker makes [deployScripts] a no-op — no 30-script asset copy,
      * no pulse overlay, no loader churn — on successive warm sessions.
      */
-    internal const val DEPLOY_VERSION = 1
+    internal const val DEPLOY_VERSION = 2
     private const val MARKER_REL = "home/.fluxlinux/scripts.deployed"
 
     /** Marker file: content is the deployed [DEPLOY_VERSION]. */
@@ -162,6 +162,8 @@ object HostScriptDeployer {
         HostScript("start_alpine_gui.sh", "scripts/chroot/start_alpine_gui.sh"),
         HostScript("stop_alpine_gui.sh", "scripts/chroot/stop_alpine_gui.sh"),
         HostScript("setup_guest_chroot.sh", "scripts/chroot/setup_guest_chroot.sh"),
+        HostScript("flux_namespace.sh", "scripts/chroot/flux_namespace.sh"),
+        HostScript("flux-mntns", "scripts/chroot/flux-mntns"),
         HostScript("uninstall_guest_chroot.sh", "scripts/chroot/uninstall_guest_chroot.sh"),
         HostScript("start_guest_gui.sh", "scripts/chroot/start_guest_gui.sh"),
         HostScript("stop_guest_gui.sh", "scripts/chroot/stop_guest_gui.sh"),

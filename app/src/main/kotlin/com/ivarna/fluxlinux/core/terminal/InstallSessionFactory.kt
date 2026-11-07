@@ -205,7 +205,7 @@ object InstallSessionFactory {
         val inner = try {
             val script = ctx.assets.open(asset).use { it.readBytes() }
             val resolver = ctx.assets.open(BusyBoxPaths.RESOLVER_ASSET).use { it.readBytes() }
-            ChrootSetupCommand.buildStagingSession(
+            RootShell.namespaceStagingCommand(ctx) + ChrootSetupCommand.buildStagingSession(
                 profile = profile,
                 scriptName = FileName(asset),
                 scriptB64 = java.util.Base64.getEncoder().encodeToString(script),

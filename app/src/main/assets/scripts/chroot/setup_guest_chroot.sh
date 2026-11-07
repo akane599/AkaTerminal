@@ -413,14 +413,12 @@ configure_guest_chroot() {
     fi
 
     progress "Mounting filesystems..."
-    /system/bin/mount -o remount,dev,suid /data 2>/dev/null \
-        || $BB mount -o remount,dev,suid /data 2>/dev/null \
-        || $BB mount -o remount,dev,suid / 2>/dev/null || true
+    # flux-mntns sets dev/suid on the private rootfs bind only.
 
     bind_if_missing /dev "$GUESTPATH/dev" || goodbye
     bind_if_missing /sys "$GUESTPATH/sys" || goodbye
     mount_type_if_missing proc "$GUESTPATH/proc" || goodbye
-    mount_type_if_missing devpts "$GUESTPATH/dev/pts" || goodbye
+    bind_if_missing /dev/pts "$GUESTPATH/dev/pts" || goodbye
     mount_type_if_missing tmpfs "$GUESTPATH/dev/shm" "size=512M,mode=1777" || goodbye
 
     ensure_chroot_tmp
@@ -504,6 +502,11 @@ main() {
         error "This script must be run as root. Exiting."
         exit 1
     fi
+
+
+# All chroot operations share the protected private mount namespace.
+. "$(dirname "$0")/flux_namespace.sh" || exit 125
+flux_namespace_enter setup "${GUESTPATH}" "$@"
 
 # resolve root BusyBox (manager built-in; NDK module not required)
 _rr=""

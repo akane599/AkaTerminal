@@ -212,14 +212,12 @@ configure_alpine_chroot() {
     fi
 
     progress "Mounting filesystems..."
-    /system/bin/mount -o remount,dev,suid /data 2>/dev/null \
-        || $BB mount -o remount,dev,suid /data 2>/dev/null \
-        || $BB mount -o remount,dev,suid / 2>/dev/null || true
+    # flux-mntns sets dev/suid on the private rootfs bind only.
 
     $BB mount --bind /dev "$ALPINEPATH/dev" || /system/bin/mount --bind /dev "$ALPINEPATH/dev" || goodbye
     $BB mount --bind /sys "$ALPINEPATH/sys" || /system/bin/mount --bind /sys "$ALPINEPATH/sys" || goodbye
     $BB mount -t proc proc "$ALPINEPATH/proc" || /system/bin/mount -t proc proc "$ALPINEPATH/proc" || goodbye
-    $BB mount -t devpts devpts "$ALPINEPATH/dev/pts" || /system/bin/mount -t devpts devpts "$ALPINEPATH/dev/pts" || goodbye
+    $BB mount --bind /dev/pts "$ALPINEPATH/dev/pts" || /system/bin/mount --bind /dev/pts "$ALPINEPATH/dev/pts" || goodbye
 
     mkdir -p "$ALPINEPATH/dev/shm"
     $BB mount -t tmpfs -o size=512M,mode=1777 tmpfs "$ALPINEPATH/dev/shm" || /system/bin/mount -t tmpfs -o size=512M,mode=1777 tmpfs "$ALPINEPATH/dev/shm" || goodbye
@@ -325,6 +323,11 @@ main() {
         error "This script must be run as root. Exiting."
         exit 1
     fi
+
+
+# All chroot operations share the protected private mount namespace.
+. "$(dirname "$0")/flux_namespace.sh" || exit 125
+flux_namespace_enter setup "${ALPINEPATH}" "$@"
 
 # resolve root BusyBox (manager built-in; NDK module not required)
 _rr=""

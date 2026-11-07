@@ -14,8 +14,8 @@ import java.util.concurrent.TimeUnit
 
 /**
  * M16 review: the real `mount_lock` (extracted from fluxlinux_chroot.sh) against a temp
- * rootfs. Stale locks (owner-less, dead or foreign pid, earlier boot) are broken; a live
- * FluxLinux holder is respected; two waiters breaking the same stale lock → one wins.
+ * rootfs. Old diagnostic records are reclaimed only under flock. A live kernel
+ * lock is respected; two waiters cannot both enter even with a stale directory.
  */
 class MountLockTest {
 
@@ -83,9 +83,10 @@ class MountLockTest {
 
     private fun ownerPid(): String = File(lock, "owner").readText().substringBefore(' ')
 
-    private fun startHolder(): Pair<Process, String> {
+    private fun startHolder(holdMountLock: Boolean = false): Pair<Process, String> {
         val pidFile = File(tmp, "holder.${System.nanoTime()}")
-        val p = shell("echo \$\$ > \"$pidFile.t\" && mv \"$pidFile.t\" \"$pidFile\"; sleep 40; :")
+        val prefix = if (holdMountLock) ". \"\$1\"; mount_lock \"\$2\" || exit 1; " else ""
+        val p = shell(prefix + "echo \$\$ > \"$pidFile.t\" && mv \"$pidFile.t\" \"$pidFile\"; sleep 40 9>&-; :")
         val deadline = System.currentTimeMillis() + 10_000
         while (!pidFile.exists() && System.currentTimeMillis() < deadline) Thread.sleep(20)
         return p to pidFile.readText().trim()
@@ -101,7 +102,7 @@ class MountLockTest {
     }
 
     @Test
-    fun ownerlessLock_isBrokenAfterAFewSeconds() {
+    fun ownerlessDiagnosticLock_isReclaimed() {
         lock.mkdirs()
         assertEquals(0, acquire())
         assertTrue(ownerPid().all { it.isDigit() })
@@ -134,7 +135,7 @@ class MountLockTest {
 
     @Test
     fun liveFluxLinuxHolder_isRespected() {
-        val (holder, holderPid) = startHolder()
+        val (holder, holderPid) = startHolder(holdMountLock = true)
         try {
             lock.mkdirs()
             val rec = "$holderPid ${bootId()} ${now()}\n"
@@ -148,14 +149,34 @@ class MountLockTest {
 
     @Test
     fun twoBreakersOfOneStaleLock_onlyOneWins() {
-        lock.mkdirs() // owner-less: stale after ~3 s
-        val hold = ". \"\$1\"; if mount_lock \"\$2\"; then echo WON; sleep 25; else echo LOST; fi; :"
-        val a = shell(hold)
-        val b = shell(hold)
-        val outs = listOf(a, b).map { p ->
-            val out = p.inputStream.bufferedReader().readText()
-            assertTrue("timeout", p.waitFor(60, TimeUnit.SECONDS))
-            out.trim()
+        lock.mkdirs() // old diagnostic directory; kernel lock decides ownership
+        // Keep the winner alive until the other contender reports. A fixed 25 s
+        // sleep can end before 60 shell polling iterations on a loaded phone.
+        val release = File(tmp, "release-winner")
+        val hold = ". \"\$1\"; if mount_lock \"\$2\"; then " +
+            "echo WON > '${tmp.absolutePath}/result.'\$\$; " +
+            "while [ ! -f '${release.absolutePath}' ]; do sleep 0.2; done; " +
+            "else echo LOST > '${tmp.absolutePath}/result.'\$\$; fi; :"
+        val traces = listOf(File(tmp, "trace-a"), File(tmp, "trace-b"))
+        val processes = traces.map { trace ->
+            ProcessBuilder("/bin/sh", "-x", "-c", hold, "fluxlinux_chroot.sh", lib.absolutePath, chroot.absolutePath)
+                .redirectError(trace).start()
+        }
+        val outs: List<String>
+        try {
+            val deadline = System.currentTimeMillis() + 60_000
+            fun results() = tmp.listFiles().orEmpty().filter { it.name.startsWith("result.") }
+            while (results().size < 2 && System.currentTimeMillis() < deadline) Thread.sleep(20)
+            assertEquals("both contenders reported", 2, results().size)
+            outs = results().map { it.readText().trim() }
+        } finally {
+            release.writeText("done")
+            processes.forEach { p ->
+                if (!p.waitFor(5, TimeUnit.SECONDS)) p.destroyForcibly()
+            }
+        }
+        if (outs.count { it == "WON" } != 1) {
+            traces.forEach { println(it.readText()) }
         }
         assertEquals(outs.toString(), 1, outs.count { it.endsWith("WON") })
         assertEquals(outs.toString(), 1, outs.count { it.endsWith("LOST") })

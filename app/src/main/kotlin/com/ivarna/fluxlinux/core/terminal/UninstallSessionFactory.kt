@@ -145,7 +145,7 @@ object UninstallSessionFactory {
             ?: "scripts/chroot/uninstall_debian13_chroot.sh"
         val scriptName = asset.substringAfterLast('/')
         // The script sources $(dirname "$0")/resolve_bb.sh: stage + verify it next to it.
-        if (!RootShell.ensureBusyBoxResolver(ctx)) {
+        if (!RootShell.ensureChrootHelper(ctx)) {
             android.util.Log.w("UninstallSession", "resolver stage/verify failed; not running $asset")
             return null
         }
@@ -153,7 +153,7 @@ object UninstallSessionFactory {
             android.util.Log.w("UninstallSession", "stage/verify failed; not running $asset")
             return null
         }
-        return buildChrootUninstallCommand(
+        return RootShell.namespaceExecGuard() + buildChrootUninstallCommand(
             scriptName = scriptName,
             scriptSha256 = assetSha(ctx, asset),
             resolverSha256 = assetSha(ctx, BusyBoxPaths.RESOLVER_ASSET),

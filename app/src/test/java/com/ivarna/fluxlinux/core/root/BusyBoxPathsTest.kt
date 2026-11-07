@@ -75,9 +75,9 @@ class BusyBoxPathsTest {
     @Test
     fun helper_version_is_v29() {
         val helper = readAsset("scripts/chroot/fluxlinux_chroot.sh")
-        assertTrue(helper.contains("fluxlinux-chroot v3.0"))
-        assertTrue(helper.contains("VERSION_STR=\"fluxlinux-chroot v3.0\""))
-        assertEquals("fluxlinux-chroot v3.0", ChrootPaths.CHROOT_HELPER_VERSION)
+        assertTrue(helper.contains("fluxlinux-chroot v3.1"))
+        assertTrue(helper.contains("VERSION_STR=\"fluxlinux-chroot v3.1\""))
+        assertEquals("fluxlinux-chroot v3.1", ChrootPaths.CHROOT_HELPER_VERSION)
     }
 
     @Test

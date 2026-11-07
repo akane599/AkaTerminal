@@ -4,6 +4,10 @@
 # Paths: app package via FLUX_PACKAGE / TARGET_PREFIX (ivarna or zenithblue). Sticky guest /tmp preserved.
 
 DEBIANPATH="${DEBIANPATH:-/data/local/tmp/chrootDebian13}"
+
+# All chroot operations share the protected private mount namespace.
+. "$(dirname "$0")/flux_namespace.sh" || exit 125
+flux_namespace_enter run "${DEBIANPATH}" "$@"
 if [ -z "${TARGET_PREFIX:-}" ]; then
   if [ -n "${FLUX_PREFIX:-}" ]; then
     TARGET_PREFIX="$FLUX_PREFIX"
@@ -125,12 +129,11 @@ if [ -f "$HELPER" ]; then
   sh "$HELPER" mount --x11 || true
   echo "[2/5] X11 via fluxlinux_chroot mount --x11"
 else
-  /system/bin/mount -o remount,dev,suid /data 2>/dev/null \
-    || $BB mount -o remount,dev,suid /data 2>/dev/null || true
+  # flux-mntns sets dev/suid on the private rootfs bind only.
   $BB mount --bind /dev "$DEBIANPATH/dev" 2>/dev/null || true
   $BB mount --bind /sys "$DEBIANPATH/sys" 2>/dev/null || true
   $BB mount -t proc proc "$DEBIANPATH/proc" 2>/dev/null || true
-  $BB mount -t devpts devpts "$DEBIANPATH/dev/pts" 2>/dev/null || true
+  $BB mount --bind /dev/pts "$DEBIANPATH/dev/pts" 2>/dev/null || true
   mkdir -p "$DEBIANPATH/dev/shm"
   $BB mount -t tmpfs -o size=512M,mode=1777 tmpfs "$DEBIANPATH/dev/shm" 2>/dev/null || true
   mkdir -p "$DEBIANPATH/tmp" "$DEBIANPATH/mnt/host-tmp"

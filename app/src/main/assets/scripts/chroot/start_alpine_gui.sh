@@ -4,6 +4,10 @@
 # Paths: app package via FLUX_PACKAGE / TARGET_PREFIX (ivarna or zenithblue). Sticky guest /tmp preserved.
 
 CHROOT_ROOT="${CHROOT_ROOT:-/data/local/tmp/chrootAlpine}"
+
+# All chroot operations share the protected private mount namespace.
+. "$(dirname "$0")/flux_namespace.sh" || exit 125
+flux_namespace_enter run "${CHROOT_ROOT}" "$@"
 if [ -z "${TARGET_PREFIX:-}" ]; then
   if [ -n "${FLUX_PREFIX:-}" ]; then
     TARGET_PREFIX="$FLUX_PREFIX"
@@ -125,12 +129,11 @@ if [ -f "$HELPER" ]; then
   sh "$HELPER" mount --x11 || true
   echo "[2/5] X11 via fluxlinux_chroot mount --x11"
 else
-  /system/bin/mount -o remount,dev,suid /data 2>/dev/null \
-    || $BB mount -o remount,dev,suid /data 2>/dev/null || true
+  # flux-mntns sets dev/suid on the private rootfs bind only.
   $BB mount --bind /dev "$CHROOT_ROOT/dev" 2>/dev/null || true
   $BB mount --bind /sys "$CHROOT_ROOT/sys" 2>/dev/null || true
   $BB mount -t proc proc "$CHROOT_ROOT/proc" 2>/dev/null || true
-  $BB mount -t devpts devpts "$CHROOT_ROOT/dev/pts" 2>/dev/null || true
+  $BB mount --bind /dev/pts "$CHROOT_ROOT/dev/pts" 2>/dev/null || true
   mkdir -p "$CHROOT_ROOT/dev/shm"
   $BB mount -t tmpfs -o size=512M,mode=1777 tmpfs "$CHROOT_ROOT/dev/shm" 2>/dev/null || true
   mkdir -p "$CHROOT_ROOT/tmp" "$CHROOT_ROOT/mnt/host-tmp"

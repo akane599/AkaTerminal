@@ -567,14 +567,14 @@ class OnboardingInstallRunner(private val ctx: Context) : InstallEngine {
         // M14: root runs the setup script only from the root-only verified stage, next to
         // its verified resolve_bb.sh sidecar (never app-writable filesDir/staged_scripts).
         val stagedSetup = ChrootSetupCommand.stagedPath(setupName)
-        if (!RootShell.ensureBusyBoxResolver(appCtx) ||
+        if (!RootShell.ensureChrootHelper(appCtx) ||
             !RootShell.stageVerified(appCtx, setupAsset, stagedSetup)
         ) {
             postFail(onProgress, phases, "Could not stage $setupName as root (verify failed)")
             return false
         }
         // Do not wrap with $PREFIX/bin/stdbuf — host W^X denies exec from app data.
-        val rootCmd = ChrootSetupCommand.build(
+        val rootCmd = RootShell.namespaceExecGuard() + ChrootSetupCommand.build(
             profile = profile,
             scriptName = setupName,
             scriptSha256 = assetSha(setupAsset),
