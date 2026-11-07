@@ -70,6 +70,9 @@ public final class TerminalSession extends TerminalOutput {
 
     final Handler mMainThreadHandler = new MainThreadHandler();
 
+    /** Applies settled window sizes to the pty; null until the subprocess starts. */
+    private PtySizeCoalescer mPtySize;
+
     private final String mShellPath;
     private final String mCwd;
     private final String[] mArgs;
@@ -104,7 +107,8 @@ public final class TerminalSession extends TerminalOutput {
         if (mEmulator == null) {
             initializeEmulator(columns, rows);
         } else {
-            JNI.setPtyWindowSize(mTerminalFileDescriptor, rows, columns);
+            // The pty follows once the size settles (PtySizeCoalescer); the grid follows now.
+            if (mPtySize != null) mPtySize.request(columns, rows);
             mEmulator.resize(columns, rows);
         }
     }
@@ -126,6 +130,21 @@ public final class TerminalSession extends TerminalOutput {
         int[] processId = new int[1];
         mTerminalFileDescriptor = JNI.createSubprocess(mShellPath, mCwd, mArgs, mEnv, processId, rows, columns);
         mShellPid = processId[0];
+        final int ptyFd = mTerminalFileDescriptor;
+        mPtySize = new PtySizeCoalescer(new PtySizeCoalescer.Scheduler() {
+            @Override
+            public void postDelayed(Runnable task, long delayMs) {
+                mMainThreadHandler.postDelayed(task, delayMs);
+            }
+
+            @Override
+            public void cancel(Runnable task) {
+                mMainThreadHandler.removeCallbacks(task);
+            }
+        }, (cols, newRows) -> {
+            // Never ioctl an fd number that cleanupResources already closed (it may be reused).
+            if (isRunning()) JNI.setPtyWindowSize(ptyFd, newRows, cols);
+        }, PtySizeCoalescer.DELAY_MS, columns, rows);
 
         final FileDescriptor terminalFileDescriptorWrapped = wrapFileDescriptor(mTerminalFileDescriptor, mClient);
 
@@ -255,6 +274,8 @@ public final class TerminalSession extends TerminalOutput {
             mShellPid = -1;
             mShellExitStatus = exitStatus;
         }
+
+        if (mPtySize != null) mPtySize.cancel();
 
         // Stop the reader and writer threads, and close the I/O streams
         mTerminalToProcessIOQueue.close();

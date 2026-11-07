@@ -1,5 +1,8 @@
 package com.ivarna.fluxlinux.ui.screens
 
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -18,6 +21,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -28,8 +32,14 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import com.ivarna.fluxlinux.R
 import com.ivarna.fluxlinux.core.terminal.GuestLoginShell
+import com.ivarna.fluxlinux.core.terminal.TerminalFont
 import com.ivarna.fluxlinux.core.utils.TerminalPreferences
+import com.ivarna.fluxlinux.ui.components.aka.AkaButton
+import com.ivarna.fluxlinux.ui.components.aka.AkaButtonKind
 import com.ivarna.fluxlinux.ui.components.aka.SectionLabel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import com.ivarna.fluxlinux.ui.theme.CodeStyle
 import com.ivarna.fluxlinux.ui.theme.FluxSpacing
 
@@ -55,6 +65,24 @@ fun TerminalSettingsScreen(
     }
     var legacyProot by remember {
         mutableStateOf(TerminalPreferences.isLegacyProotLauncher(context))
+    }
+    var customFont by remember { mutableStateOf(TerminalFont.customName(context)) }
+    var importingFont by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val fontPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        importingFont = true
+        scope.launch {
+            val result = withContext(Dispatchers.IO) { TerminalFont.import(context, uri) }
+            importingFont = false
+            customFont = TerminalFont.customName(context)
+            val message = when (result) {
+                TerminalFont.ImportResult.Ok -> R.string.terminal_settings_font_ok
+                TerminalFont.ImportResult.Unreadable -> R.string.terminal_settings_font_unreadable
+                TerminalFont.ImportResult.NotMonospace -> R.string.terminal_settings_font_not_monospace
+            }
+            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+        }
     }
 
     SettingsPageScaffold(title = "Terminal", onBack = onBack) {
@@ -127,6 +155,57 @@ fun TerminalSettingsScreen(
                 colors = stepperColors,
             ) {
                 Icon(Icons.Sharp.Add, contentDescription = "Larger")
+            }
+        }
+
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = FluxSpacing.lg, vertical = FluxSpacing.sm)
+        ) {
+            Text(
+                stringResource(R.string.terminal_settings_font),
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                customFont?.let { stringResource(R.string.terminal_settings_font_custom, it) }
+                    ?: stringResource(R.string.terminal_settings_font_bundled),
+                style = CodeStyle,
+                color = MaterialTheme.colorScheme.secondary
+            )
+            Text(
+                stringResource(R.string.terminal_settings_font_summary),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        // Stacked: two labelled buttons side by side don't fit a 360dp phone.
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = FluxSpacing.lg, vertical = FluxSpacing.sm),
+            verticalArrangement = Arrangement.spacedBy(FluxSpacing.sm)
+        ) {
+            AkaButton(
+                text = stringResource(R.string.terminal_settings_font_choose),
+                onClick = {
+                    // Many file managers label fonts application/octet-stream; import() validates.
+                    fontPicker.launch(arrayOf("font/*", "application/x-font-ttf", "application/x-font-otf", "application/font-sfnt", "application/vnd.ms-opentype", "application/octet-stream"))
+                },
+                enabled = !importingFont,
+                kind = AkaButtonKind.SECONDARY,
+            )
+            if (customFont != null) {
+                AkaButton(
+                    text = stringResource(R.string.terminal_settings_font_reset),
+                    onClick = {
+                        TerminalFont.reset(context)
+                        customFont = null
+                    },
+                    enabled = !importingFont,
+                    kind = AkaButtonKind.SECONDARY,
+                )
             }
         }
 

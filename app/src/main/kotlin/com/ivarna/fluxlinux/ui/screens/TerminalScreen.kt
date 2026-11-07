@@ -1,7 +1,6 @@
 package com.ivarna.fluxlinux.ui.screens
 
 import android.content.Context
-import android.graphics.Typeface
 import android.system.Os
 import android.system.OsConstants
 import android.view.KeyEvent
@@ -31,7 +30,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.imeAnimationSource
+import androidx.compose.foundation.layout.imeAnimationTarget
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
@@ -97,6 +98,7 @@ import androidx.compose.foundation.ScrollState
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.draw.clip
+import com.ivarna.fluxlinux.core.terminal.TerminalFont
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
@@ -210,6 +212,7 @@ private val EDGE_OPEN_DISTANCE = 48.dp
  * shells (Ubuntu root, Ubuntu chroot, Termux host) live in its long-press / dropdown menu.
  * Session values come from [TerminalShellCatalog] via [TerminalSessionDefaults].
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun TerminalScreen(
     onOpenDashboard: (() -> Unit)? = null,
@@ -255,6 +258,8 @@ fun TerminalScreen(
     // without a view-size change, so pixel width/height is NOT a valid guard key).
     val lastWinchKey = remember { intArrayOf(-1, -1, -1) } // cols, rows, pid
 
+    val appliedTypeface = remember { arrayOfNulls<android.graphics.Typeface>(1) }
+
     // Reload prefs when returning from Settings (Terminal / X11 detail pages).
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
@@ -264,6 +269,14 @@ fun TerminalScreen(
                 showExtraKeys = TerminalPreferences.isExtraKeysEnabled(context)
                 accelerateKeys = TerminalPreferences.isKeyRepeatAccelerated(context)
                 terminalViewRef?.setTextSize(fontSize)
+                // A font picked in Terminal settings; setTypeface re-lays out the grid, so only on change.
+                terminalViewRef?.let { view ->
+                    val typeface = TerminalFont.load(context)
+                    if (typeface !== appliedTypeface[0]) {
+                        appliedTypeface[0] = typeface
+                        view.setTypeface(typeface)
+                    }
+                }
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -410,14 +423,15 @@ fun TerminalScreen(
                 val cols = emulator.mColumns
                 val rows = emulator.mRows
                 val pid = session.pid
-                if (pid > 0 &&
-                    (cols != lastWinchKey[0] || rows != lastWinchKey[1] || pid != lastWinchKey[2])
-                ) {
-                    lastWinchKey[0] = cols
-                    lastWinchKey[1] = rows
-                    lastWinchKey[2] = pid
+                // A grid change needs no signal here: the pty size follows it (coalesced in
+                // TerminalSession), and that TIOCSWINSZ makes the kernel signal the foreground
+                // group. Signalling now would make the shell redraw at the old size first.
+                if (pid > 0 && pid != lastWinchKey[2]) {
                     runCatching { Os.kill(pid, OsConstants.SIGWINCH) }
                 }
+                lastWinchKey[0] = cols
+                lastWinchKey[1] = rows
+                lastWinchKey[2] = pid
             } catch (_: Exception) {
             }
         }
@@ -538,8 +552,15 @@ fun TerminalScreen(
                 // sits on the scheme's own stock.
                 .background(if (activeIndex >= 0) TerminalBackground else MaterialTheme.colorScheme.background)
                 .windowInsetsPadding(WindowInsets.statusBars)
+                // The keyboard resizes the terminal once per show/hide, not on every animation
+                // frame: a burst of sizes makes tmux panes and full-screen Codex / Claude Code
+                // re-anchor until they no longer fill the screen. The larger of the animation's
+                // start and end heights: showing, the grid shrinks first and the keyboard slides
+                // into the gap; hiding, it slides away first and the grid grows when it's gone.
                 .windowInsetsPadding(
-                    WindowInsets.ime.union(WindowInsets.navigationBars)
+                    WindowInsets.imeAnimationSource
+                        .union(WindowInsets.imeAnimationTarget)
+                        .union(WindowInsets.navigationBars)
                         .only(WindowInsetsSides.Bottom)
                 )
         ) {
@@ -549,11 +570,7 @@ fun TerminalScreen(
                         factory = { ctx ->
                             TerminalView(ctx, null).apply {
                                 setTextSize(fontSize)
-                                try {
-                                    val tf = Typeface.createFromAsset(ctx.assets, "fonts/font.ttf")
-                                    setTypeface(tf)
-                                } catch (_: Exception) {
-                                }
+                                setTypeface(TerminalFont.load(ctx).also { appliedTypeface[0] = it })
                                 setTerminalViewClient(object : TerminalViewClient {
                                     override fun onScale(scale: Float): Float {
                                         if (scale < 0.9f || scale > 1.1f) {

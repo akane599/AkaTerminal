@@ -1,6 +1,7 @@
 // termux-app terminal-emulator v0.118.0 (GPLv3), vendored from
 // https://github.com/termux/termux-app/tree/v0.118.0/terminal-emulator.
-// Carries local fixes: TerminalSession.java (M6, never SIGKILL pid 0),
+// Carries local fixes: TerminalSession.java (M6, never SIGKILL pid 0; pty resizes coalesced by
+// PtySizeCoalescer.java),
 // TerminalEmulator.java (CSI < / CSI = consumed, not printed),
 // TerminalBuffer.java (the word at a tap spans wrapped rows in the transcript, in
 // linear time),

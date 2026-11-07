@@ -204,16 +204,6 @@ object HostScriptDeployer {
                     if (script.required) ok = false
                 }
             }
-            try {
-                val termuxDir = File(homeDir, ".termux").also { it.mkdirs() }
-                val fontOut = File(termuxDir, "font.ttf")
-                if (!fontOut.isFile) {
-                    ctx.assets.open("fonts/font.ttf").use { input ->
-                        FileOutputStream(fontOut).use { input.copyTo(it) }
-                    }
-                }
-            } catch (_: Exception) {
-            }
             overlayPulseRuntime(ctx)
             val loaderOk = deployLoaderApk(ctx)
             if (!loaderOk) Log.w(TAG, "loader.apk deploy failed — host not ready")
