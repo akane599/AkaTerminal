@@ -16,6 +16,11 @@ leases outside the guest; removal requires an exclusive lease and no remaining
 processes in the namespace. PID/start time, boot, namespace and rootfs identity
 are checked before entry. Signals and owner retirement use pidfds.
 
+Setup cleanup preserves the verified private root bind while removing its child
+mounts, so extraction and subsequent launches retain dev/suid on the guest only.
+The namespace guard sets this cleanup context after verifying actual membership.
+Uninstall still removes the entire guest under its exclusive lease.
+
 State is under `/data/adb/fluxlinux/namespaces/<boot>/<device>-<inode>`, with root-only
 directories and files. A dead, corrupt or ambiguous owner is refused, never silently
 replaced. Retired state remains a tombstone for that boot. Do not delete protection

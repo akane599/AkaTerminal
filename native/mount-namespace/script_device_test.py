@@ -39,7 +39,8 @@ def main():
         (guest / '.flux_configured').touch()
         hosttmp.mkdir(mode=0o700, parents=True)
         for name in ['flux-mntns', 'flux_namespace.sh', 'fluxlinux_chroot.sh',
-                     'resolve_bb.sh', 'uninstall_guest_chroot.sh']:
+                     'resolve_bb.sh', 'uninstall_guest_chroot.sh', 'setup_guest_chroot.sh',
+                     'setup_debian13_chroot.sh', 'setup_alpine_chroot.sh']:
             shutil.copyfile(ASSETS / name, stage / name)
             # Match RootShell's production staging: 0600, default SELinux label.
             # The hash-verified guard makes only the native helper executable.
@@ -132,6 +133,19 @@ def main():
         active = None
         inside(flockcmd)
         checks['android_flock_released_after_owner_death'] = True
+        for setup in ['setup_guest_chroot.sh', 'setup_debian13_chroot.sh', 'setup_alpine_chroot.sh']:
+            # Source actual setup helpers only; no downloads, extraction or package changes.
+            command = ('FLUX_SETUP_LIB=1; . "'+path(stage / setup)+'"; '
+                       'GUESTPATH="$FLUX_CHROOT"; DEBIANPATH="$FLUX_CHROOT"; ALPINEPATH="$FLUX_CHROOT"; '
+                       'cleanup_mounts')
+            payload = base64.b64encode(command.encode()).decode()
+            run(['/system/bin/sh', path(stage / 'fluxlinux_chroot.sh'), 'host-b64', '--', payload])
+            after_cleanup = inside('cat /proc/self/mountinfo').stdout
+            retained = [line for line in after_cleanup.splitlines() if line.split()[4].startswith(path(guest))]
+            assert len(retained) == 1 and retained[0].split()[4] == path(guest), retained
+            assert not (set(retained[0].split()[5].split(',')) & {'nodev', 'nosuid', 'noexec'})
+            checks[setup + '_cleanup_preserves_private_root_only'] = True
+            run(['/system/bin/sh', path(stage / 'fluxlinux_chroot.sh'), 'mount'])
         harness = stage / 'remove-fixture.sh'
         harness.write_text('''#!/system/bin/sh
 . "$(dirname "$0")/flux_namespace.sh" || exit 125
@@ -171,7 +185,8 @@ remove_rootfs "$FLUX_CHROOT"
         report = {'passed': failure is None and all(checks.values()), 'checks': checks, 'failure': failure,
                   'calls': calls, 'before': before, 'after': after, 'guest': path(guest), 'stage': path(stage),
                   'source_hashes': {n: hashlib.sha256((ASSETS / n).read_bytes()).hexdigest() for n in
-                                    ['flux-mntns','flux_namespace.sh','fluxlinux_chroot.sh','uninstall_guest_chroot.sh']}}
+                                    ['flux-mntns','flux_namespace.sh','fluxlinux_chroot.sh','uninstall_guest_chroot.sh',
+                                     'setup_guest_chroot.sh','setup_debian13_chroot.sh','setup_alpine_chroot.sh']}}
         out = HERE / 'results'
         out.mkdir(exist_ok=True)
         result = out / ('scripts-' + tag + '.json')

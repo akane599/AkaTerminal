@@ -5,9 +5,10 @@ _State of ongoing work (Current effort), baselines, the append-only decision log
 ## Current effort: private chroot mounts (Samsung local candidate)
 _Updated: 2026-11-07 18:42 UTC_
 - **Goal:** isolate guest mounts from Android's global view while preserving terminal, GUI, setup, uninstall and SAF.
-- **Done:** source base461755f, installed0d176c7 (one keyboard fix behind); launcher and native X11/PTY base match. ELF5bce7463… native30/30. Final Android script31/31 including actual launch, PTY, UID1000, setuid, SAF binary stream, X11, uninstall, flock exclusion/death-release and unchanged10/10 health. Evidence `native/mount-namespace/results/scripts-f0def28a5bdb.json`.
+- **Done:** source base461755f, installed0d176c7 (one keyboard fix behind); launcher and native X11/PTY base match. ELF5bce7463… native30/30. Final Android script34/34 including actual launch, PTY, UID1000, setuid, SAF binary stream, X11, uninstall, flock exclusion/death-release and unchanged10/10 health. Evidence `native/mount-namespace/results/scripts-a8d54a7d3730.json`.
 - **Corrections found by tests:** serialize root-job cancellation before destroying su client. Replace the old mkdir/PID/time mount lock with kernel flock in all seven copies; persistent lock inode, explicit9>&9 for Android mksh. Real/sdcard fixture assumptions skip safely; uninstall mock BusyBox now delegates flock. Previous failed runs and one intentionally stopped test worker are retained in research evidence; no Android service was stopped.
 - **Validation:** focused JVM283 tests,0 failures/errors,22 skips (19 existing environment assumptions +3 real/sdcard cases); seven shell suites and shell syntax passed. Exact results are in the research unit-tests-final directory.
+- **Setup followup:** three real setup cleanup functions preserve the private root anchor and dev/suid; 23 focused JVM checks passed after this correction. Initial signed2c1867f build was never installed/delivered and is superseded in research internal history.
 - **Next:** assemble/sign/archive this exact local candidate commit and installed rollback APK; mirror README into Download. No GitHub publish or install from this active terminal.
 - **Build:** SDK36/Gradle8.14, one worker, bounded JVM; external init script uses source-unchanged, hash-pinned installed X11/PTY ELFs. No SDK/dependency/version changes or JVM language servers.
 - **Open:** user APK update + full reboot/root required before real Ubuntu/GUI/DocumentsUI/Duck acceptance. No live guest migration or global unmount; storage-provider restart/removable storage unqualified. Existing untracked IDE files/screenshot preserved.
@@ -118,3 +119,5 @@ _Updated: 2026-11-05 · rewrite this section, don't append_
 - AVDs available: pixel-api35, pixel, batstats-api36, batstats16k, screenoff-api37, amber-api23.
 
 - 2026-11-07: Samsung local candidate isolates chroot mounts per boot/rootfs; all lifecycle and SAF entries join the owner. Kernel flock replaces the racy mkdir lock; root cancellation serializes tree cleanup. Native30/script31/JVM283+shell7 checks recorded; actual cold boot/UI/Duck acceptance follows user APK update.
+
+- 2026-11-07: setup cleanup keeps the verified namespace root bind while removing child mounts; full root removal remains exclusive uninstall behavior. Final device34/34; focused setup/lifecycle/asset guard checks passed.

@@ -40,8 +40,8 @@ pick_awk() {
 mounts_under() {
     { [ -r "$PROC_MOUNTS" ] && pick_awk; } || return 1
     # shellcheck disable=SC2086
-    $AWK -v p="$1" '
-        $2 == p || index($2, p "/") == 1 { m[n++] = $2 }
+    $AWK -v p="$1" -v keep="${FLUX_PRIVATE_ROOT_MOUNT:-0}" '
+        ($2 == p && keep != 1) || index($2, p "/") == 1 { m[n++] = $2 }
         END {
             for (i = 0; i < n; i++)
                 for (j = i + 1; j < n; j++)
@@ -58,7 +58,13 @@ no_mounts_at_or_under() {
     command -v grep >/dev/null 2>&1 || _grep="${BB:+$BB grep}"
     [ -n "$_grep" ] || return 1
     # shellcheck disable=SC2086
-    $_grep -F -e " $1 " -e " $1/" "$PROC_MOUNTS" >/dev/null 2>&1
+    # The verified namespace guard owns this root bind; preserve its dev/suid
+    # flags across extraction/configuration cleanup. Children must still be gone.
+    if [ "${FLUX_PRIVATE_ROOT_MOUNT:-0}" = 1 ]; then
+        $_grep -F -e " $1/" "$PROC_MOUNTS" >/dev/null 2>&1
+    else
+        $_grep -F -e " $1 " -e " $1/" "$PROC_MOUNTS" >/dev/null 2>&1
+    fi
     [ "$?" -eq 1 ]
 }
 

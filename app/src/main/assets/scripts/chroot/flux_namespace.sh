@@ -4,6 +4,7 @@
 FLUX_MNTNS_SHA256='5bce7463d98544f3e36564a6725f605446d7f6e56796fc8e8c2040e8528f5abb'
 
 flux_namespace_enter() {
+    unset FLUX_PRIVATE_ROOT_MOUNT
     _flux_ns_operation="$1"
     _flux_ns_root="$2"
     shift 2
@@ -35,7 +36,7 @@ flux_namespace_enter() {
     "$_flux_ns_bin" inside "$_flux_ns_state" "$_flux_ns_root"
     _flux_ns_rc=$?
     case "$_flux_ns_rc" in
-        0) return 0 ;;
+        0) FLUX_PRIVATE_ROOT_MOUNT=1; export FLUX_PRIVATE_ROOT_MOUNT; return 0 ;;
         3) ;;
         *) exit "$_flux_ns_rc" ;;
     esac
