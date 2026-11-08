@@ -37,11 +37,16 @@ void repair_storage(int dir,const std::string& root) {
     struct stat st{};
     if(disconnected) {
         need(old.type=="fuse","storage is not FUSE");
-        if(!stat(target.c_str(),&st)) { need(S_ISDIR(st.st_mode),"storage is not a directory");return; }
+        // Cached FUSE attributes can outlive the server. Query the filesystem
+        // rather than accepting stat(directory) as proof of a live connection.
+        struct statfs current_fs{};
+        if(!statfs(target.c_str(),&current_fs)) {
+            need(current_fs.f_type==0x65735546,"storage filesystem changed");return;
+        }
         need(errno==ENOTCONN,"storage error is not a disconnected FUSE server");
     }
     // O_PATH pins a disconnected mount without asking its dead FUSE server.
-    // fstat on this FD would itself return ENOTCONN; verify the mount ID instead.
+    // fstat may return cached data or ENOTCONN; verify the mount ID instead.
     Fd previous(disconnected ? open(target.c_str(),O_PATH|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC) : -1);
     if(disconnected) {
         sysok(previous.n,"pin disconnected storage");
@@ -54,7 +59,7 @@ void repair_storage(int dir,const std::string& root) {
 #endif
     Fd fresh(open(source.c_str(),O_PATH|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC));
     sysok(fresh.n,"pin current Android storage");
-    auto fresh_id=identity(fresh.n); // Requires a live FUSE server before mutation.
+    auto fresh_id=identity(fresh.n); // Identity may be cached; fstatfs below proves liveness.
     struct statfs fs{};sysok(fstatfs(fresh.n,&fs),"inspect current storage filesystem");
     need(fs.f_type==0x65735546,"current Android storage is not FUSE");
 #ifndef FLUX_RECOVERY_TEST

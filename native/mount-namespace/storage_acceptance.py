@@ -23,12 +23,17 @@ try:
  check('old_marker_visible',f.shell('cat "$1/sdcard/marker"').stdout=='old123')
  client=subprocess.Popen(f.command('run','--','/system/bin/sh','-c','echo $$; read unused'),stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
  clientpid=int(client.stdout.readline());clientstart=Path('/proc',str(clientpid),'stat').read_text().rsplit(')',1)[1].split()[19]
- f.kill(old);dead=mounts();check('real_ENOTCONN_reproduced','Transport endpoint is not connected' in f.shell('stat "$1/sdcard"',expected=1).stderr)
+ f.shell('stat "$1/sdcard"');f.kill(old);check('cached_stat_still_succeeds_after_server_death',f.shell('stat "$1/sdcard"').returncode==0);dead=mounts();check('real_ENOTCONN_reproduced','Transport endpoint is not connected' in f.shell('stat -f "$1/sdcard"',expected=1).stderr)
+ baseline=HERE.parents[3]/'ubuntu-storage-recovery-r3/source/native/mount-namespace/build/flux-mntns'
+ assert hashlib.sha256(baseline.read_bytes()).hexdigest()=='2561ea45585c68b1953e973cda8e82fabe2311e6d411ce159d27134b324021cc'
+ shutil.copyfile(baseline,f.host/'old-r3');(f.host/'old-r3').chmod(0o700)
+ f.call('run','--',path(f.host/'old-r3'),'storage',path(f.state),path(f.root))
+ check('old_r3_bug_reproduced_unchanged_dead_mount',mounts()==dead and 'Transport endpoint is not connected' in f.shell('stat -f "$1/sdcard"',expected=1).stderr)
  repair('/missing',expected=125);check('unavailable_source_leaves_mounts_identical',mounts()==dead)
  repair(path(f.root/'spare'),expected=125);check('nonfuse_source_refused_before_mutation',mounts()==dead)
  lock=open(f.state/'storage.lock','r+');fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB);repair(source,expected=125);lock.close();check('concurrent_repair_refused_unchanged',mounts()==dead)
  repair(source,fail=True,expected=125)
- check('rollback_restores_disconnected_mount',len(cardrow())==1 and cardrow()[0].split()[2]==[x for x in dead.splitlines() if x.split()[4]==path(f.root/'sdcard')][0].split()[2] and 'Transport endpoint is not connected' in f.shell('stat "$1/sdcard"',expected=1).stderr)
+ check('rollback_restores_disconnected_mount',len(cardrow())==1 and cardrow()[0].split()[2]==[x for x in dead.splitlines() if x.split()[4]==path(f.root/'sdcard')][0].split()[2] and 'Transport endpoint is not connected' in f.shell('stat -f "$1/sdcard"',expected=1).stderr)
  repair(source);check('repair_reads_fresh_contents',f.shell('cat "$1/sdcard/marker"').stdout=='new456')
  repaired=mounts();repair(source);check('repeat_healthy_noop',mounts()==repaired)
  check('keeper_record_unchanged',json.loads(f.call('inspect').stdout)==f.initial)

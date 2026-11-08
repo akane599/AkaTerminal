@@ -28,8 +28,8 @@ int main(int argc,char **argv) {
         void *body=out+sizeof(*r);
         switch(h->opcode){
         case FUSE_INIT:{struct fuse_init_out *v=body;v->major=7;v->minor=23;v->max_write=4096;v->max_background=4;v->congestion_threshold=3;r->len+=sizeof(*v);break;}
-        case FUSE_GETATTR:{struct fuse_attr_out *v=body;attr(&v->attr,h->nodeid);r->len+=sizeof(*v);break;}
-        case FUSE_LOOKUP:{if(strcmp(in+sizeof(*h),"marker")){r->error=-ENOENT;break;}struct fuse_entry_out *v=body;v->nodeid=2;v->generation=1;attr(&v->attr,2);r->len+=sizeof(*v);break;}
+        case FUSE_GETATTR:{struct fuse_attr_out *v=body;v->attr_valid=3600;attr(&v->attr,h->nodeid);r->len+=sizeof(*v);break;}
+        case FUSE_LOOKUP:{if(strcmp(in+sizeof(*h),"marker")){r->error=-ENOENT;break;}struct fuse_entry_out *v=body;v->nodeid=2;v->generation=1;v->attr_valid=3600;v->entry_valid=3600;attr(&v->attr,2);r->len+=sizeof(*v);break;}
         case FUSE_OPEN: case FUSE_OPENDIR:{struct fuse_open_out *v=body;v->fh=1;r->len+=sizeof(*v);break;}
         case FUSE_READ:{struct fuse_read_in *v=(void*)(in+sizeof(*h));size_t len=strlen(argv[2]);if(v->offset<len){len-=v->offset;if(len>v->size)len=v->size;memcpy(body,argv[2]+v->offset,len);r->len+=len;}break;}
         case FUSE_ACCESS:case FUSE_RELEASE:case FUSE_RELEASEDIR:case FUSE_FLUSH:break;

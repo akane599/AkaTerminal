@@ -81,9 +81,11 @@ def main():
         server_pid = int(ready.split()[1])
         server_fd = os.pidfd_open(server_pid)
         assert path(stage / 'storage-fixture').encode() in Path('/proc',str(server_pid),'cmdline').read_bytes()
+        inside('stat "$1/sdcard"')
         signal.pidfd_send_signal(server_fd, signal.SIGKILL)
         server.communicate(timeout=6); os.close(server_fd)
-        broken = inside('stat "$1/sdcard" 2>&1 || true').stdout
+        checks['actual_launcher_cached_stat_after_death'] = inside('stat "$1/sdcard"').returncode == 0
+        broken = inside('stat -f "$1/sdcard" 2>&1 || true').stdout
         checks['actual_launcher_ENOTCONN_reproduced'] = 'Transport endpoint is not connected' in broken
         run(['/system/bin/sh', path(stage / 'fluxlinux_chroot.sh'), 'mount'])
         checks['actual_launcher_repairs_storage'] = inside('test -r "$1/sdcard/Download/Samsung-C5-Yedek/README.md"').returncode == 0

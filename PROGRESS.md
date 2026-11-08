@@ -2,12 +2,14 @@
 
 _State of ongoing work (Current effort), baselines, the append-only decision log, audit status and known issues._
 
-## Current effort: shared storage recovery after Android soft reboot (Samsung r3)
+## Current effort: cached FUSE storage recovery (Samsung r4)
 _Updated: 2026-11-08_
 - Real r2 update and user soft reboot passed owner recovery in the same Ubuntu namespace. Native generation2/family38 and Duck1104 Mount CLEAR passed. The guest `/sdcard` remained bound to the dead Android FUSE server (ENOTCONN), while init storage was healthy.
 - Added a root-only storage operation for the validated guest namespace: live source clone, private propagation, targeted replacement, disconnected-tree rollback; initial mounting uses the same path. No Android/global mount mutations, restarts, keeper replacement or background watcher. The launcher remains usable when storage is unavailable.
-- Validation: real owned FUSE disconnect/recovery, actual launcher integration, former namespace/owner regressions; results under research/duck-mount-20261106/ubuntu-storage-recovery-r3/source/native/mount-namespace/results. Final counts and APK hashes are recorded in that release manifest.
-- Next: signed local APK and archive, user update, then live /sdcard validation. Agent never updates its own active terminal app. First-root KSU automation is separately authorized but follows storage acceptance; Neo source remains unchanged.
+- Real r3 APK update kept owner/runtime intact but missed the outage: Android returned cached stat(sdcard). r4 uses statfs; fixture caches attributes for3600s and reproduces the old shipped helper bug before verifying repair.
+- Live exact r4 helper19e51d95 repaired existing dead /sdcard in the current private namespace, with same keeper29611/485018. Only sdcard changed; all10 runtime health categories remained identical. UID1000 shared65792-byte create/read/fsync/rename/delete passed; no Android restart. Installed staged r3 assets stayed unchanged.
+- Validation: final namespace/owner/launcher/storage results and real repair evidence under research/duck-mount-20261106/ubuntu-storage-recovery-r4. Signed APK and archive next; then user update before the next Android soft reboot. First-root KSU automation is authorized; Neo source stays unchanged.
+
 - Limits: user0 only; mount syscalls require this supported kernel. Open FDs into the dead filesystem do not recover. Detach/attach is not crash atomic. Unsupported clone/private operations refuse before detaching old storage. Original keeper killer remains unknown.
 
 ## Previous effort: private chroot mounts (Samsung local candidate)
@@ -134,3 +136,5 @@ _Updated: 2026-11-05 · rewrite this section, don't append_
 - 2026-11-07: setup cleanup keeps the verified namespace root bind while removing child mounts; full root removal remains exclusive uninstall behavior. Final device34/34; focused setup/lifecycle/asset guard checks passed.
 
 - 2026-11-08: Samsung r3 imports a detached current-storage clone from init, makes it private before guest attachment, and retains a disconnected old-tree clone for rollback. Ordinary cross-namespace bind and detached-FD rebinding failed in real fixtures; no production mount was changed during development.
+
+- 2026-11-08: r4 uses statfs instead of cached stat attributes to detect FUSE disconnect; exact standalone tested helper repaired the live mount and preserved all other runtime state.
