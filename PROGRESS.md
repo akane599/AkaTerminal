@@ -2,13 +2,13 @@
 
 _State of ongoing work (Current effort), baselines, the append-only decision log, audit status and known issues._
 
-## Current effort: keeper recovery after owner disappearance (Samsung r2)
+## Current effort: shared storage recovery after Android soft reboot (Samsung r3)
 _Updated: 2026-11-08_
-- Goal: allow guest re-entry without a full reboot after keeper loss; preserve surviving sessions and private mounts.
-- Done: `ensure` validates root/boot/owner identity, adopts only a verified surviving private guest namespace, or creates a fresh one under an exclusive lease. Old owner records and recovery intents are retained. Ambiguous identities/interrupted attempts remain refused. Namespace inode recycling is handled by verifying the guest mount anchor, including nested entry.
-- Validation: exact final helper622124b8… passed native30/30, recovery40/40 and actual launcher39/39 Android checks, including live guest PTY preservation, empty-guest remount, crashes around publication, concurrent recovery and unchanged production health. Results and earlier failed test assumptions are preserved under research/duck-mount-20261106/ubuntu-owner-recovery-r2/source/native/mount-namespace/results.
-- Next: bounded signed release APK build, focused staging tests, verification and versioned release archive. User updates the app (can close this agent's terminals); no planned reboot/reset/ZIP. Actual Android soft-reboot recovery remains unqualified.
-- Limits: original keeper killer unknown; this is recovery, not a claim that keeper death is prevented. No production owner was killed or migrated. r1 healthy-owner format stays compatible; real private mounts remain in place.
+- Real r2 update and user soft reboot passed owner recovery in the same Ubuntu namespace. Native generation2/family38 and Duck1104 Mount CLEAR passed. The guest `/sdcard` remained bound to the dead Android FUSE server (ENOTCONN), while init storage was healthy.
+- Added a root-only storage operation for the validated guest namespace: live source clone, private propagation, targeted replacement, disconnected-tree rollback; initial mounting uses the same path. No Android/global mount mutations, restarts, keeper replacement or background watcher. The launcher remains usable when storage is unavailable.
+- Validation: real owned FUSE disconnect/recovery, actual launcher integration, former namespace/owner regressions; results under research/duck-mount-20261106/ubuntu-storage-recovery-r3/source/native/mount-namespace/results. Final counts and APK hashes are recorded in that release manifest.
+- Next: signed local APK and archive, user update, then live /sdcard validation. Agent never updates its own active terminal app. First-root KSU automation is separately authorized but follows storage acceptance; Neo source remains unchanged.
+- Limits: user0 only; mount syscalls require this supported kernel. Open FDs into the dead filesystem do not recover. Detach/attach is not crash atomic. Unsupported clone/private operations refuse before detaching old storage. Original keeper killer remains unknown.
 
 ## Previous effort: private chroot mounts (Samsung local candidate)
 _Updated: 2026-11-07 20:23 UTC_
@@ -132,3 +132,5 @@ _Updated: 2026-11-05 · rewrite this section, don't append_
 - 2026-11-07: Samsung local candidate isolates chroot mounts per boot/rootfs; all lifecycle and SAF entries join the owner. Kernel flock replaces the racy mkdir lock; root cancellation serializes tree cleanup. Native30/script31/JVM283+shell7 checks recorded; actual cold boot/UI/Duck acceptance follows user APK update.
 
 - 2026-11-07: setup cleanup keeps the verified namespace root bind while removing child mounts; full root removal remains exclusive uninstall behavior. Final device34/34; focused setup/lifecycle/asset guard checks passed.
+
+- 2026-11-08: Samsung r3 imports a detached current-storage clone from init, makes it private before guest attachment, and retains a disconnected old-tree clone for rollback. Ordinary cross-namespace bind and detached-FD rebinding failed in real fixtures; no production mount was changed during development.

@@ -271,7 +271,10 @@ ensure_mounts() {
   ensure_sticky_tmp
 
   bind_if_missing "$FLUX_HOST_TMP" "$FLUX_CHROOT/mnt/host-tmp"
-  bind_if_missing /sdcard "$FLUX_CHROOT/sdcard"
+  # Android soft reboot replaces its FUSE server; our private bind may be stale.
+  # A storage outage must not prevent access to the rest of the guest.
+  "$_flux_ns_bin" storage "$_flux_ns_state" "$FLUX_CHROOT" \
+    || echo "Shared storage is unavailable; continuing without repair." >&2
 
   # launch_tool bridge: host-tmp → guest sticky /tmp
   if [ -f "$FLUX_HOST_TMP/launch_tool.sh" ]; then

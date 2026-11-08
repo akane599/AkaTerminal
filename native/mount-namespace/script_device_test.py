@@ -69,6 +69,25 @@ def main():
         checks['dev_suid_on_private_root_only'] = not (flags & {'nodev', 'nosuid', 'noexec'})
         checks['no_private_mounts_visible_globally'] = path(guest) not in Path('/proc/1/mountinfo').read_text()
         checks['guest_devices_available_privately'] = inside('test -c "$1/dev/null" && test -c "$1/dev/pts/ptmx" && test -r "$1/proc/self/mountinfo"').returncode == 0
+        # Reproduce the real soft-reboot storage failure on this owned root only.
+        shutil.copyfile(HERE / 'build/storage-fixture', stage / 'storage-fixture')
+        (stage / 'storage-fixture').chmod(0o700)
+        inside('umount "$1/sdcard"')
+        server = subprocess.Popen(['chroot', '/proc/1/root', path(stage / 'flux-mntns'),
+            'run', path(state), path(guest), '--', path(stage / 'storage-fixture'),
+            path(guest / 'sdcard'), 'owned1'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        assert select.select([server.stdout], [], [], 5)[0]
+        ready = server.stdout.readline(); assert ready.startswith('READY '), ready
+        server_pid = int(ready.split()[1])
+        server_fd = os.pidfd_open(server_pid)
+        assert path(stage / 'storage-fixture').encode() in Path('/proc',str(server_pid),'cmdline').read_bytes()
+        signal.pidfd_send_signal(server_fd, signal.SIGKILL)
+        server.communicate(timeout=6); os.close(server_fd)
+        broken = inside('stat "$1/sdcard" 2>&1 || true').stdout
+        checks['actual_launcher_ENOTCONN_reproduced'] = 'Transport endpoint is not connected' in broken
+        run(['/system/bin/sh', path(stage / 'fluxlinux_chroot.sh'), 'mount'])
+        checks['actual_launcher_repairs_storage'] = inside('test -r "$1/sdcard/Download/Samsung-C5-Yedek/README.md"').returncode == 0
+        checks['actual_launcher_repair_preserves_owner'] = json.loads(run([path(stage / 'flux-mntns'), 'inspect', path(state), path(guest)]).stdout) == owner
         # Use the Android app-side PTY, not this Ubuntu session's existing PTY mount.
         master = os.open(ANDROID / 'dev/ptmx', os.O_RDWR | os.O_NOCTTY)
         fcntl.ioctl(master, 0x40045431, struct.pack('i', 0)) # TIOCSPTLCK
@@ -205,7 +224,7 @@ remove_rootfs "$FLUX_CHROOT"
                 else: p.rmdir()
             stage.rmdir()
             for p in state.iterdir():
-                assert (p.name in ['gate.lock', 'creating', 'retired', 'recovery.lock'] or (p.name.startswith('recover-') and p.name.endswith('.intent')) or (p.name.startswith('owner-') and p.name.endswith('.history'))) and p.is_file() and not p.is_symlink()
+                assert (p.name in ['gate.lock', 'creating', 'retired', 'recovery.lock', 'storage.lock'] or (p.name.startswith('recover-') and p.name.endswith('.intent')) or (p.name.startswith('owner-') and p.name.endswith('.history'))) and p.is_file() and not p.is_symlink()
                 p.unlink()
             state.rmdir()
         checks['owned_files_cleaned'] = not guest.exists() and not stage.exists() and (state is None or not state.exists())

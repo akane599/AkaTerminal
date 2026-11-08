@@ -19,6 +19,7 @@
 #include <sys/file.h>
 #include <sys/mount.h>
 #include <sys/stat.h>
+#include <sys/vfs.h>
 #include <sys/syscall.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -433,16 +434,17 @@ int execute(int ns,char** command) {
     running_child_fd=-1;
     return WIFEXITED(status)?WEXITSTATUS(status):128+WTERMSIG(status);
 }
+#include "storage.h"
 } // namespace
 
 int main(int argc,char** argv) {
     try {
         need(getuid()==0 && geteuid()==0,"root required");
-        need(argc>=4,"usage: flux-mntns create|ensure|run|exclusive|remove|inside|inspect|retire|preflight STATE ROOTFS [-- CMD...]");
+        need(argc>=4,"usage: flux-mntns create|ensure|run|exclusive|remove|inside|inspect|retire|preflight|storage STATE ROOTFS [-- CMD...]");
         std::string mode=argv[1],state=argv[2],root=argv[3];
         bool run=mode=="run" || mode=="exclusive" || mode=="remove";
         need((run && argc>=6 && std::string(argv[4])=="--") || (!run && argc==4),"invalid arguments");
-        need(run || mode=="create" || mode=="ensure" || mode=="inside" || mode=="inspect" || mode=="retire" || mode=="preflight","unknown operation");
+        need(run || mode=="create" || mode=="ensure" || mode=="inside" || mode=="inspect" || mode=="retire" || mode=="preflight" || mode=="storage","unknown operation");
         need(root.rfind("/data/local/tmp/",0)==0 && root.find_first_of(" \t\r\n\\")==std::string::npos,
              "invalid rootfs path");
         char* canonical=realpath(root.c_str(),nullptr); need(canonical,"rootfs missing");
@@ -479,10 +481,14 @@ int main(int argc,char** argv) {
         }
         struct stat existing{};
         bool existing_create=mode=="create" && !fstatat(dir.n,"owner",&existing,AT_SYMLINK_NOFOLLOW);
-        sysok(flock(gate.n,((mode=="run" || mode=="inspect" || existing_create)?LOCK_SH:LOCK_EX)|LOCK_NB),"namespace busy");
+        sysok(flock(gate.n,((mode=="run" || mode=="inspect" || mode=="storage" || existing_create)?LOCK_SH:LOCK_EX)|LOCK_NB),"namespace busy");
         if(existing_create) { auto r=record(dir.n); Fd ns(pin_owner(r,root_id)); return 0; }
         if(mode=="create") { create(state,root,root_id,dir.n); return 0; }
         auto r=record(dir.n); Fd ns(pin_owner(r,root_id));
+        if(mode=="storage") {
+            need(self_ns()==r.ns && current_namespace_has_guest(root,root_id),"storage recovery requires the owned guest namespace");
+            repair_storage(dir.n,root);return 0;
+        }
         if(mode=="inspect") {
             printf("{\"pid\":%d,\"start\":%llu,\"namespace\":%llu,\"root_inode\":%llu}\n",
                    r.pid,r.ticks,r.ns.ino,r.root.ino); return 0;

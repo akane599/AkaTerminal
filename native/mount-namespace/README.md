@@ -109,3 +109,11 @@ The candidate build reuses the installed, source-unchanged X11/PTY native librar
 through an external Gradle init script, while rebuilding app code and the new
 namespace helper. The release archive records their hashes, exact source base,
 patch and build tooling. Preserve that provenance when reproducing the APK.
+
+## Shared storage after Android soft reboot (Samsung r3)
+
+`storage STATE ROOTFS` runs only inside the validated private guest namespace. It serializes with other storage repairs and the namespace lease, leaves healthy mounts alone, and repairs only a single disconnected FUSE mount (`ENOTCONN`) without descendants. With no mount, it creates the initial storage attachment. Other errors are refused; the launcher reports the problem and keeps the terminal usable.
+
+The helper pins current user-0 storage from init, briefly visits that namespace only to obtain a detached `open_tree` clone, returns to the guest, makes the clone private with `mount_setattr`, then attaches with `move_mount`. It never changes init mounts. Ordinary bind cannot import a mount from another namespace on the tested kernel. Before detaching old storage it clones that mount for rollback; an O_PATH FD alone cannot restore a detached mount. Source validation and clone preparation happen before detaching. The two mount changes are not crash atomic. Open FDs into dead storage remain dead; newly opened paths use the replacement. No background polling or Android restart. Requires these Linux mount syscalls; unavailable operations leave the existing mount unchanged. Multi-user Android is not qualified.
+
+`storage_fixture.c` is a disposable minimal FUSE server, not an APK asset. `storage_acceptance.py --owned-storage-fixture` verifies real disconnected storage, fresh contents, rollback injection, lock exclusion, same keeper/live client, private propagation and unchanged production health. `script_device_test.py` also exercises actual launcher recovery. Test-only source overrides and bind-fault controls compile only under `FLUX_RECOVERY_TEST` and are absent from the shipped helper.

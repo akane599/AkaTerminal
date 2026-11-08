@@ -1,7 +1,7 @@
 #!/system/bin/sh
 # Source from a root-staged lifecycle script, before any mount/chroot/removal.
 # The native hash is updated only by native/mount-namespace/publish.py.
-FLUX_MNTNS_SHA256='622124b83202974ecc56a324a21a0cc8de7a3d0eec52e14a30416c3490ed1f14'
+FLUX_MNTNS_SHA256='2561ea45585c68b1953e973cda8e82fabe2311e6d411ce159d27134b324021cc'
 
 flux_namespace_enter() {
     unset FLUX_PRIVATE_ROOT_MOUNT

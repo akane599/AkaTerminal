@@ -19,3 +19,8 @@ mkdir -p "$(dirname -- "$OUT")"
   -resource-dir="$NDK_LLVM/lib/clang/18" -std=c11 -O2 -Wall -Wextra -Werror \
   -static -mbranch-protection=standard -fuse-ld=lld-18 --rtlib=compiler-rt \
   -Wl,-z,max-page-size=16384 "$HERE/guest_probe.c" -o "$(dirname "$OUT")/guest-probe"
+
+"${CC:-clang-18}" --target=aarch64-linux-android29 --sysroot="$NDK_LLVM/sysroot" \
+  -resource-dir="$NDK_LLVM/lib/clang/18" -std=c11 -O2 -Wall -Wextra -Werror \
+  -static -mbranch-protection=standard -fuse-ld=lld-18 --rtlib=compiler-rt \
+  -Wl,-z,max-page-size=16384 "$HERE/storage_fixture.c" -o "$(dirname "$OUT")/storage-fixture"
