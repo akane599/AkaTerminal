@@ -1,7 +1,7 @@
 #!/system/bin/sh
 # Source from a root-staged lifecycle script, before any mount/chroot/removal.
 # The native hash is updated only by native/mount-namespace/publish.py.
-FLUX_MNTNS_SHA256='5bce7463d98544f3e36564a6725f605446d7f6e56796fc8e8c2040e8528f5abb'
+FLUX_MNTNS_SHA256='622124b83202974ecc56a324a21a0cc8de7a3d0eec52e14a30416c3490ed1f14'
 
 flux_namespace_enter() {
     unset FLUX_PRIVATE_ROOT_MOUNT
@@ -37,10 +37,10 @@ flux_namespace_enter() {
     _flux_ns_rc=$?
     case "$_flux_ns_rc" in
         0) FLUX_PRIVATE_ROOT_MOUNT=1; export FLUX_PRIVATE_ROOT_MOUNT; return 0 ;;
-        3) ;;
+        3|4) ;;
         *) exit "$_flux_ns_rc" ;;
     esac
-    "$_flux_ns_bin" create "$_flux_ns_state" "$_flux_ns_root" || exit $?
+    "$_flux_ns_bin" ensure "$_flux_ns_state" "$_flux_ns_root" || exit $?
     case "$_flux_ns_operation" in setup) _flux_ns_operation=run ;; esac
     exec "$_flux_ns_bin" "$_flux_ns_operation" "$_flux_ns_state" "$_flux_ns_root" \
         -- /system/bin/sh "$0" "$@"

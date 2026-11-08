@@ -10,7 +10,9 @@ HERE = Path(__file__).resolve().parent
 ANDROID = Path('/proc/1/root')
 RESEARCH = Path('/home/akane/research/duck-mount-20261106')
 sys.path.insert(0, str(RESEARCH / 'native-family-order'))
-from verify_runtime import snapshot, same
+sys.path.insert(0, '/home/akane/research/duck-mount-20261106/native-generation-r1')
+from capture_live import snapshot
+from verify_runtime import same
 
 def main():
     assert os.geteuid() == 0 and sys.argv[1:] == ['--owned-fixture']

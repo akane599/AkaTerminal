@@ -8,7 +8,9 @@ HERE = Path(__file__).resolve().parent
 ASSETS = HERE.parents[1] / 'app/src/main/assets/scripts/chroot'
 ANDROID = Path('/proc/1/root')
 sys.path.insert(0, '/home/akane/research/duck-mount-20261106/native-family-order')
-from verify_runtime import snapshot, same
+sys.path.insert(0, '/home/akane/research/duck-mount-20261106/native-generation-r1')
+from capture_live import snapshot
+from verify_runtime import same
 
 def main():
     assert os.geteuid() == 0 and sys.argv[1:] == ['--owned-script-fixture']
@@ -88,10 +90,37 @@ def main():
         checks['guest_user_creates_new_pty'] = b'uid=1000' in output
         checks['guest_process_root_remains_detectable'] = os.readlink(f'/proc/{probe_pid}/root') == path(guest)
         calls.append({'pty_output': output.decode(errors='replace')})
+        # Kill only this fixture keeper; keep the actual guest PTY client alive.
+        def kill_fixture_owner(record):
+            proc = Path('/proc') / str(record['pid'])
+            assert int((proc / 'stat').read_text().rsplit(')', 1)[1].split()[19]) == record['start']
+            assert path(guest).encode() in (proc / 'cmdline').read_bytes()
+            fd = os.pidfd_open(record['pid'])
+            signal.pidfd_send_signal(fd, signal.SIGKILL)
+            poller = select.poll(); poller.register(fd, select.POLLIN)
+            assert poller.poll(5000)
+            os.close(fd)
+            deadline = time.monotonic() + 5
+            while proc.exists():
+                assert time.monotonic() < deadline
+                time.sleep(.03)
+        old_owner = owner
+        kill_fixture_owner(owner)
+        run(['/system/bin/sh', path(stage / 'fluxlinux_chroot.sh'), 'mount'])
+        owner = json.loads(run([path(stage / 'flux-mntns'), 'inspect', path(state), path(guest)]).stdout)
+        checks['launcher_recovers_live_guest_namespace'] = owner['pid'] != old_owner['pid'] and owner['namespace'] == old_owner['namespace']
+        checks['launcher_recovery_preserves_live_pty'] = active.poll() is None and Path('/proc', str(probe_pid)).exists()
+        checks['launcher_recovery_retains_guest_mounts'] = len([line for line in inside('cat /proc/self/mountinfo').stdout.splitlines() if line.split()[4].startswith(path(guest))]) == 8
         active.send_signal(signal.SIGTERM)
         assert active.wait(timeout=5) == 143
         active = None
         os.close(master); master = None
+        old_owner = owner
+        kill_fixture_owner(owner)
+        run(['/system/bin/sh', path(stage / 'fluxlinux_chroot.sh'), 'mount'])
+        owner = json.loads(run([path(stage / 'flux-mntns'), 'inspect', path(state), path(guest)]).stdout)
+        checks['launcher_recreates_empty_guest_namespace'] = owner['pid'] != old_owner['pid'] and any(p.read_text().startswith('fresh\n') for p in state.glob('*.intent'))
+        checks['launcher_rebuilds_all_guest_mounts'] = len([line for line in inside('cat /proc/self/mountinfo').stdout.splitlines() if line.split()[4].startswith(path(guest))]) == 8
         suid = inside('. "'+path(stage)+'/resolve_bb.sh"; resolve_bb && "$BB" chroot "$1" /probe --suid')
         checks['guest_setuid_exec_preserved'] = suid.stdout.strip() == 'uid=1000 euid=0'
         host_payload = base64.b64encode(b'/system/bin/readlink /proc/self/ns/mnt').decode()
@@ -176,7 +205,7 @@ remove_rootfs "$FLUX_CHROOT"
                 else: p.rmdir()
             stage.rmdir()
             for p in state.iterdir():
-                assert p.name in ['gate.lock', 'creating', 'retired'] and p.is_file() and not p.is_symlink()
+                assert (p.name in ['gate.lock', 'creating', 'retired', 'recovery.lock'] or (p.name.startswith('recover-') and p.name.endswith('.intent')) or (p.name.startswith('owner-') and p.name.endswith('.history'))) and p.is_file() and not p.is_symlink()
                 p.unlink()
             state.rmdir()
         checks['owned_files_cleaned'] = not guest.exists() and not stage.exists() and (state is None or not state.exists())

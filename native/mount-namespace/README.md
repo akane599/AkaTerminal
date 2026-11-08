@@ -22,9 +22,20 @@ The namespace guard sets this cleanup context after verifying actual membership.
 Uninstall still removes the entire guest under its exclusive lease.
 
 State is under `/data/adb/fluxlinux/namespaces/<boot>/<device>-<inode>`, with root-only
-directories and files. A dead, corrupt or ambiguous owner is refused, never silently
-replaced. Retired state remains a tombstone for that boot. Do not delete protection
-records to force an entry. The helper requires the pidfd-capable Samsung kernel
+directories and files. `ensure` reuses a healthy keeper. If its recorded PID has
+actually disappeared, it first searches for the surviving private namespace and
+checks its root mount anchor and rootfs identity; inode numbers alone can be
+recycled immediately. It creates a replacement keeper inside that same namespace
+without changing mounts or terminating clients. If no guest namespace survives,
+it requires an exclusive client lease and no global guest mounts before creating
+a fresh private namespace. The launcher then restores its ordinary guest mounts.
+
+Recovery writes an exclusive, durable intent and archives the exact old owner
+record before publishing a replacement. Corrupt identities, PID reuse, incomplete
+recovery attempts and retired state remain refused. Publication after a crash can
+be retried only under the newly committed owner identity. Do not delete protection
+records to force an entry. Recovery does not explain or prevent the original
+keeper death, and cannot restore processes or volatile tmpfs contents that died. The helper requires the pidfd-capable Samsung kernel
 tested here; older Android kernels have not been qualified.
 
 The guard verifies the packaged native helper hash before execution. Kotlin staging
@@ -49,6 +60,11 @@ FLUX_NDK_ROOT=/path/to/android-ndk-r27c sh native/mount-namespace/build.sh
 python3 native/mount-namespace/publish.py
 sudo python3 native/mount-namespace/device_test.py --owned-fixture
 sudo python3 native/mount-namespace/script_device_test.py --owned-script-fixture
+# Additional fault-injection binary is test-only and is never packaged:
+CXX="$PWD/native/mount-namespace/fault-cxx.sh" \
+  FLUX_MNTNS_OUT="$PWD/native/mount-namespace/build/flux-mntns-fault" \
+  FLUX_NDK_ROOT=/path/to/android-ndk-r27c sh native/mount-namespace/build.sh
+sudo python3 native/mount-namespace/recovery_device_test.py --owned-recovery-fixture
 ```
 
 The native build uses host ARM clang/lld 18 with NDK r27c headers/static libraries,
@@ -67,14 +83,24 @@ the recorded delta, never silently discarded.
 
 ## Installation and remaining acceptance
 
+The r2 owner-recovery update is compatible with a healthy r1 private keeper and
+its existing record format. Update the APK while retaining app/Ubuntu data; no
+planned reboot, reset or ZIP installation is required. Installing the app can
+close active terminals, so the user performs the update after the agent has saved
+its work. Actual recovery after an Android soft reboot remains to be accepted;
+owned tests intentionally kill only fixture keepers, not the production guest.
+The original r1 migration constraints below apply to global-mount installations.
+
+
 Existing globally mounted Ubuntu cannot be migrated while these sessions run.
 The new launcher deliberately refuses that condition. Prepare the signed APK,
 install it as an update preserving app data, then let the user perform a full
 reboot, regain root and open AkaTerminal. No factory reset or Ubuntu reinstall is
 needed. The agent must not reboot, restart zygote or unmount the running guest.
 
-Real cold-boot entry, Duck's seven Ubuntu mount records, interactive terminal/GUI
-and DocumentsUI still require acceptance after installation. Fully private mounts
+The r1 private-mount candidate passed real cold-boot, terminal/GUI/DocumentsUI
+and Duck Ubuntu-mount acceptance on this phone. The r2 recovery path needs its
+own post-update real-use acceptance. Fully private mounts
 do not receive later global mount propagation; removable storage and Android
 storage-service restart behavior remain unqualified. This package does not claim
 to fix unrelated Duck UID, ADB or uname findings.

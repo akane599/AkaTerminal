@@ -2,16 +2,26 @@
 
 _State of ongoing work (Current effort), baselines, the append-only decision log, audit status and known issues._
 
-## Current effort: private chroot mounts (Samsung local candidate)
-_Updated: 2026-11-07 18:42 UTC_
+## Current effort: keeper recovery after owner disappearance (Samsung r2)
+_Updated: 2026-11-08_
+- Goal: allow guest re-entry without a full reboot after keeper loss; preserve surviving sessions and private mounts.
+- Done: `ensure` validates root/boot/owner identity, adopts only a verified surviving private guest namespace, or creates a fresh one under an exclusive lease. Old owner records and recovery intents are retained. Ambiguous identities/interrupted attempts remain refused. Namespace inode recycling is handled by verifying the guest mount anchor, including nested entry.
+- Validation: exact final helper622124b8… passed native30/30, recovery40/40 and actual launcher39/39 Android checks, including live guest PTY preservation, empty-guest remount, crashes around publication, concurrent recovery and unchanged production health. Results and earlier failed test assumptions are preserved under research/duck-mount-20261106/ubuntu-owner-recovery-r2/source/native/mount-namespace/results.
+- Next: bounded signed release APK build, focused staging tests, verification and versioned release archive. User updates the app (can close this agent's terminals); no planned reboot/reset/ZIP. Actual Android soft-reboot recovery remains unqualified.
+- Limits: original keeper killer unknown; this is recovery, not a claim that keeper death is prevented. No production owner was killed or migrated. r1 healthy-owner format stays compatible; real private mounts remain in place.
+
+## Previous effort: private chroot mounts (Samsung local candidate)
+_Updated: 2026-11-07 20:23 UTC_
 - **Goal:** isolate guest mounts from Android's global view while preserving terminal, GUI, setup, uninstall and SAF.
 - **Done:** source base461755f, installed0d176c7 (one keyboard fix behind); launcher and native X11/PTY base match. ELF5bce7463… native30/30. Final Android script34/34 including actual launch, PTY, UID1000, setuid, SAF binary stream, X11, uninstall, flock exclusion/death-release and unchanged10/10 health. Evidence `native/mount-namespace/results/scripts-a8d54a7d3730.json`.
 - **Corrections found by tests:** serialize root-job cancellation before destroying su client. Replace the old mkdir/PID/time mount lock with kernel flock in all seven copies; persistent lock inode, explicit9>&9 for Android mksh. Real/sdcard fixture assumptions skip safely; uninstall mock BusyBox now delegates flock. Previous failed runs and one intentionally stopped test worker are retained in research evidence; no Android service was stopped.
 - **Validation:** focused JVM283 tests,0 failures/errors,22 skips (19 existing environment assumptions +3 real/sdcard cases); seven shell suites and shell syntax passed. Exact results are in the research unit-tests-final directory.
 - **Setup followup:** three real setup cleanup functions preserve the private root anchor and dev/suid; 23 focused JVM checks passed after this correction. Initial signed2c1867f build was never installed/delivered and is superseded in research internal history.
-- **Next:** assemble/sign/archive this exact local candidate commit and installed rollback APK; mirror README into Download. No GitHub publish or install from this active terminal.
+- **Delivered:** source0d77a59 APK5e0f736a… signed with the same Akane certificate as installed; all17 script/native assets, X11/PTY libraries, metadata and alignment verified. Samsung release20261107-r8 mirrored to Download with all hashes/file sets matching (7artifacts/10files/642622789bytes). Previous installed APK and unified installation README included.
+- **Real-device acceptance:** user installed exact5e0f736a… APK and full-booted. Boot1edcdef8: keeper9858/ns4026536354, eight private guest mounts, zero Ubuntu mounts in init/native/classic/system/provider. Actual terminal +helper18/18, binary65792byte pipe and UID1000 I/O; Files/DocumentsUI listed Ubuntu home; XFCE start/display/stop passed, current terminal preserved. Health10/10 unchanged. Duck chrootUbuntu0/FUSE three methods0; source unchanged, no GitHub push. Evidence `/home/akane/research/duck-mount-20261106/ubuntu-mount-isolation-20261107/live-1edcdef8/REPORT.md`.
+- **Next:** coordinated Samsung first-generation measurement on normal boot/root before an additional manual soft reboot (one-test condition, not a permanent user restriction). Vector startup rendezvous race is now tracked in research/vector-first-restart-20261107. User's extra restart disabled the separate native addon for this boot; no AkaTerminal reinstall required. R8 APK/source archive remains immutable; R9 archived and mirrored live evidence and the read-only FUSE verifier fix:4artifacts/7files/2888433bytes, all hashes/file sets match.
 - **Build:** SDK36/Gradle8.14, one worker, bounded JVM; external init script uses source-unchanged, hash-pinned installed X11/PTY ELFs. No SDK/dependency/version changes or JVM language servers.
-- **Open:** user APK update + full reboot/root required before real Ubuntu/GUI/DocumentsUI/Duck acceptance. No live guest migration or global unmount; storage-provider restart/removable storage unqualified. Existing untracked IDE files/screenshot preserved.
+- **Open:** broader DocumentsProvider CRUD, storage-provider restart/removable storage and long-duration behavior remain unqualified. The required real Ubuntu/GUI/DocumentsUI listing/Duck acceptance passed. No live guest migration or global unmount; storage-provider restart/removable storage unqualified. Existing untracked IDE files/screenshot preserved.
 
 ## Previous effort: PR #2 review fixes (terminal-first + Akane-iro)
 _Updated: 2026-11-05 · rewrite this section, don't append_
@@ -38,6 +48,7 @@ _Updated: 2026-11-05 · rewrite this section, don't append_
 - 2026-10-19 @ b4cf9d6: 402 unit tests, 0 failing. Both baseline failures are fixed (SQ-1 bc97fe1, SQ-2 f1b5efd). Screenshot tests: 3 previews pass `:app:validateIvarnaDebugScreenshotTest` (SQ-3).
 
 ## Decision log (never delete; one line each)
+- 2026-11-08: keeper recovery uses a separate publication lock, retained durable evidence and root-anchor verification; only confirmed absence permits repair, and fresh namespace creation requires an exclusive guest lease. No production guest kill/restart during development.
 - 2026-10-19: Adopted android-kit at 7f6e61d (fork mode, integration branch main, kit files committed).
 - 2026-10-19: Prior `.agent/` docs reconciled. The release commit-identity rule and push approval are now live-rules. `.agent/rules/project.md` is stale (it describes FinalBenchmark2) and is ignored. The generic workflows are superseded by Sidequest.
 - 2026-10-19: Compose Preview Screenshot Testing pinned at 0.0.1-alpha10 (alpha11+ need Kotlin ≥2.2; the project is on 2.0.20). Previews use fake data, and only the ivarna flavor has references.
