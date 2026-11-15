@@ -1,0 +1,75 @@
+name: Set up the AkaTerminal build
+description: >-
+  JDK, Android SDK packages, native build tools, the termux-x11 submodules and the
+  host bootstrap (assembled from the tracked .debs) for the ivarna flavor.
+
+inputs:
+  app-id:
+    description: applicationId whose host bootstrap is assembled
+    default: com.ivarna.fluxlinux
+
+runs:
+  using: composite
+  steps:
+    - name: Free disk space
+      shell: bash
+      run: |
+        # The termux-x11 native build, the bootstrap and Gradle's caches need several GB.
+        sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup /usr/local/share/boost /opt/hostedtoolcache/CodeQL || true
+        df -h / | tail -1
+
+    - name: Native build tools
+      shell: bash
+      run: |
+        # termux-x11's CMake build needs Python3, Bison and patch; the bootstrap needs ar and xz.
+        missing=()
+        for tool in bison patch python3 ar xz; do command -v "$tool" >/dev/null || missing+=("$tool"); done
+        if [ "${#missing[@]}" -gt 0 ]; then
+          echo "Installing: ${missing[*]}"
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq bison patch python3 binutils xz-utils
+        fi
+
+    - uses: actions/setup-java@v4
+      with:
+        distribution: temurin
+        java-version: '21'
+
+    - name: Android SDK packages
+      shell: bash
+      run: |
+        # Versions pinned by the modules' build files (ndkVersion; AGP 8.7's default CMake).
+        sdkmanager="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+        yes | "$sdkmanager" --licenses >/dev/null || true
+        "$sdkmanager" --install "ndk;29.0.14206865" "cmake;3.22.1" "platforms;android-36" >/dev/null
+
+    - name: Submodule cache key
+      id: submodules
+      shell: bash
+      run: echo "key=termux-x11-modules-$(git ls-tree HEAD termux-x11/src/main/cpp/ | sha256sum | cut -c1-16)" >> "$GITHUB_OUTPUT"
+
+    - uses: actions/cache@v4
+      with:
+        path: .git/modules/termux-x11
+        key: ${{ steps.submodules.outputs.key }}
+        restore-keys: termux-x11-modules-
+
+    - name: termux-x11 submodules
+      shell: bash
+      run: |
+        # Only termux-x11's sources: native/termux-packages is huge and only rebuilds the .debs.
+        paths=$(git config -f .gitmodules --get-regexp '^submodule\.termux-x11.*\.path$' | awk '{print $2}')
+        for attempt in 1 2 3; do
+          git submodule update --init --depth 1 --jobs 8 -- $paths && exit 0
+          echo "Submodule fetch failed (attempt $attempt), retrying"
+          sleep $((attempt * 15))
+        done
+        exit 1
+
+    - name: Host bootstrap
+      shell: bash
+      run: |
+        python3 scripts/assemble_bootstrap.py --package-name "${{ inputs.app-id }}" --mode full
+        bash scripts/verify_bootstrap.sh "${{ inputs.app-id }}"
+
+    - uses: gradle/actions/setup-gradle@v4

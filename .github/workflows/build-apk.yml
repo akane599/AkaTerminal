@@ -1,0 +1,108 @@
+name: Build APKs
+
+# Run from Actions → Build APKs → Run workflow. The APKs land in the run's artifacts.
+# The release APK is signed with the release key when these repository secrets exist,
+# and unsigned (app-ivarna-release-unsigned.apk) otherwise:
+#   RELEASE_KEYSTORE_BASE64   base64 of the keystore file (.p12 / .jks)
+#   RELEASE_STORE_PASSWORD
+#   RELEASE_KEY_ALIAS
+#   RELEASE_KEY_PASSWORD
+# The debug APK is signed with the runner's throwaway debug key, so it can't update
+# an install made from another machine's debug build or from a release build.
+
+on:
+  workflow_dispatch:
+    inputs:
+      variant:
+        description: Which APKs to build
+        type: choice
+        options: [both, release, debug]
+        default: both
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build ${{ inputs.variant }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-build
+
+      - name: Release signing
+        if: inputs.variant != 'debug'
+        id: signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::warning::No RELEASE_KEYSTORE_BASE64 secret: the release APK is unsigned."
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          keystore="$RUNNER_TEMP/release-keystore"
+          printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$keystore"
+          # Java properties: a backslash in a value must be doubled.
+          esc() { printf '%s' "$1" | sed 's/\\/\\\\/g'; }
+          {
+            echo "storeFile=$keystore"
+            echo "storePassword=$(esc "$STORE_PASSWORD")"
+            echo "keyAlias=$(esc "$KEY_ALIAS")"
+            echo "keyPassword=$(esc "$KEY_PASSWORD")"
+          } > keystore.properties
+          echo "signed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Gradle build
+        env:
+          VARIANT: ${{ inputs.variant }}
+        run: |
+          tasks=()
+          [ "$VARIANT" != debug ] && tasks+=(:app:assembleIvarnaRelease)
+          [ "$VARIANT" != release ] && tasks+=(:app:assembleIvarnaDebug)
+          ./gradlew --console=plain "${tasks[@]}"
+
+      - name: Collect APKs
+        id: collect
+        run: |
+          out="$RUNNER_TEMP/apks"
+          mkdir -p "$out"
+          sha=$(git rev-parse --short HEAD)
+          version=$(sed -nE 's/^ *versionName = "([^"]+)".*/\1/p' app/build.gradle.kts | head -1)
+          base="AkaTerminal-v${version}-${sha}"
+          rel=app/build/outputs/apk/ivarna/release
+          if [ -f "$rel/app-ivarna-release.apk" ]; then
+            cp "$rel/app-ivarna-release.apk" "$out/$base.apk"
+          elif [ -f "$rel/app-ivarna-release-unsigned.apk" ]; then
+            cp "$rel/app-ivarna-release-unsigned.apk" "$out/$base-unsigned.apk"
+          fi
+          dbg=app/build/outputs/apk/ivarna/debug/app-ivarna-debug.apk
+          [ -f "$dbg" ] && cp "$dbg" "$out/$base-debug.apk"
+          (cd "$out" && sha256sum *.apk > SHA256SUMS.txt)
+          echo "name=$base" >> "$GITHUB_OUTPUT"
+          echo "dir=$out" >> "$GITHUB_OUTPUT"
+          {
+            echo "### $base"
+            echo
+            echo "Release signing: ${{ steps.signing.outputs.signed || 'not built' }}"
+            echo
+            echo '```'
+            cat "$out/SHA256SUMS.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.collect.outputs.name }}
+          path: ${{ steps.collect.outputs.dir }}
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Remove signing material
+        if: always()
+        run: rm -f keystore.properties "$RUNNER_TEMP/release-keystore"

@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Tests, lint, screenshots, debug build
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-build
+
+      - name: Shell tests
+        run: |
+          for f in app/src/test/shell/*.sh; do
+            echo "::group::$f"
+            sh "$f" app/src/main/assets
+            echo "::endgroup::"
+          done
+
+      - name: Unit tests, lint, screenshot validation, debug APK
+        run: >-
+          ./gradlew --continue --console=plain
+          :app:testIvarnaDebugUnitTest
+          :app:lintIvarnaDebug
+          :app:validateIvarnaDebugScreenshotTest
+          :app:assembleIvarnaDebug
+
+      - name: Upload reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports
+          path: |
+            app/build/reports/
+            app/build/test-results/
+            app/build/outputs/screenshotTest-results/
+          retention-days: 14
