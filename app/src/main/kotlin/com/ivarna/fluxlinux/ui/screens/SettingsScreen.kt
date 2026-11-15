@@ -246,7 +246,11 @@ fun SettingsScreen(
 
 /** About: the mark and wordmark, the fork's links, credits, and one small upstream line. */
 @Composable
-internal fun SettingsAboutSection(open: (String) -> Unit) {
+internal fun SettingsAboutSection(
+    open: (String) -> Unit,
+    // A parameter so screenshot previews pin it: a version bump must not change their PNGs.
+    versionName: String = BuildConfig.VERSION_NAME,
+) {
     // The mark and wordmark head this block; a label above them would only repeat it.
     Column(
         modifier = Modifier
@@ -263,7 +267,7 @@ internal fun SettingsAboutSection(open: (String) -> Unit) {
         AkaWordmark(style = MaterialTheme.typography.headlineMedium)
         Spacer(Modifier.height(FluxSpacing.xs))
         Text(
-            stringResource(R.string.settings_aka_version, BuildConfig.VERSION_NAME),
+            stringResource(R.string.settings_aka_version, versionName),
             style = CodeStyle,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

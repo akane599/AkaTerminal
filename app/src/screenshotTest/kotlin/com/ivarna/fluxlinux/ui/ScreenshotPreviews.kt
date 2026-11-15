@@ -43,6 +43,9 @@ import com.ivarna.fluxlinux.ui.theme.FluxSpacing
 // (HomeScreen, SettingsScreen) are made of. The screens themselves read device
 // state (filesystem, services), so these use fake data only. The app is always dark.
 
+/** Fixed, so the About previews don't change with every release's versionName. */
+private const val PREVIEW_VERSION_NAME = "2.2.0"
+
 private val fakeLinkNames = listOf("shared", "downloads", "documents", "dcim", "pictures", "music", "movies")
 
 private val storageNotGranted = SharedStorageUi(
@@ -315,12 +318,12 @@ fun SettingsPreview() {
 @Preview(name = "SettingsAbout", showBackground = true, widthDp = 360, heightDp = 900)
 @Composable
 fun SettingsAboutPreview() {
-    PreviewHost { SettingsAboutSection(open = {}) }
+    PreviewHost { SettingsAboutSection(open = {}, versionName = PREVIEW_VERSION_NAME) }
 }
 
 @PreviewTest
 @Preview(name = "SettingsAboutLargeFont", showBackground = true, widthDp = 360, heightDp = 1100, fontScale = 1.3f)
 @Composable
 fun SettingsAboutLargeFontPreview() {
-    PreviewHost { SettingsAboutSection(open = {}) }
+    PreviewHost { SettingsAboutSection(open = {}, versionName = PREVIEW_VERSION_NAME) }
 }
