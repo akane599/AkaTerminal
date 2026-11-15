@@ -1,0 +1,3 @@
+- The keyboard resizes the terminal once per show/hide: full-screen apps in tmux (Codex, Claude Code) keep filling the screen
+- Pinch zoom and window resizes send one size change when you stop
+- Pick your own monospace terminal font in Settings > Terminal > Font

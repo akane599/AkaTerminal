@@ -2,19 +2,18 @@
 
 _State of ongoing work (Current effort), baselines, the append-only decision log, audit status and known issues._
 
-## Current effort: PR #2 review fixes (terminal-first + Akane-iro)
-_Updated: 2026-11-05 · rewrite this section, don't append_
-- **Goal (user request):** `/pr-review-toolkit:review-pr` on PR #2 (`feat/terminal-first` → `feat/ubuntu-chroot`), then "fix all": every Important finding and every Suggestion from that review. Same branch, local commits only (nothing pushed).
-- **Done (local, `7835a14` to `142c0d8`):** terminal (wrapped link in the scrollback, linear even across the whole transcript; default colours are the Akane-iro tokens; testable service start commands; wake-lock test reset), install (InstallController owns the effective kind and refuses an add-on mid-install; per-kind `InstallSteps`; desktop incomplete marker and `UbuntuDesktop.detect`; customization exit 3 / failure finishes with a warning shown on the Done page, wizard, toast, a dismissible notification and the Desktop panel; chroot add-on precheck no longer reads an unanswered root probe as a missing rootfs; pulse panel plugin only when the desktop is asked for or a panel exists), Ubuntu page (readiness split from the desktop run state; an installed desktop wins over a failed add-on run; logs copied through `TerminalClipboard`), dead glass/haze code and tokens removed, docs and comments corrected, `.claude/scripts/setup-worktree.sh`; then, at the user's request, the Tab key reads TAB. Two independent reviews of the fix commits; all 5 of their findings fixed.
+## Current effort: v2.2.2 and GitHub Actions
+_Updated: 2026-11-15 · rewrite this section, don't append_
+- **Goal (user request):** main back to 461755f (the terminal keyboard-resize + custom font commit), then v2.2.2, plus a CI workflow and one that builds debug and release APKs.
+- **Done:** main and origin reset to 461755f (dropped commits kept in the local branch `backup/main-before-reset`); the empty `V2.2.2` release/tag deleted; `ci.yml` and `build-apk.yml` with shared `.github/actions/setup-build`; the `RELEASE_*` signing secrets set from Akane.p12 at the user's request; About previews pinned to a fixed version; `MountLockTest` made deterministic where mkdir is uutils (it failed every CI run). CI green at 4499244.
 - **Next:**
-  - [ ] Ask the user before pushing to PR #2.
-  - [ ] Device checks (signed release on the phone): the TAB key, a link tapped in the scrollback, terminal colours, the idle X11 mark, the warning notification and Desktop panel; customization exit 3 through `proot-distro login` and `captureInChroot`; plus the older list (Paste key and More… menu, Hold wakelock, an existing XFCE install's Start/Open/Stop, a PRoot flux → akane migration from v2.1.8, drawer horizon, key caps and launcher icon).
+  - [ ] Device check of v2.2.2 on the phone (the keyboard resize and font picker were tried on 2026-11-07 from the same code).
   - [ ] Secondary screens still use Material `OutlinedButton`/`TextButton` (stadium shape) in dialogs and some settings pages; move them to `AkaButton` if the user wants full consistency.
-  - [x] PR #1 merged; main carries the terminal-first work; v2.2.0 published as a pre-release.
-  - [ ] Promote v2.2.0 to a full release once the user has tried it; close PR #2 (its commits are on main); store screenshots and featureGraphic still show the old look.
-- **Open questions:** should the debug build also be signed with the user's key (so `run-as` diagnosis works on the phone without wiping data)? Not asked yet.
+  - [ ] Store screenshots and featureGraphic still show the old look.
+- **Open questions:** should the debug build also be signed with the user's key (so `run-as` diagnosis works on the phone without wiping data)? Not asked yet. Should the dropped chroot mount-isolation work (`backup/main-before-reset`) come back later in another form?
 
 ## Baseline
+- 2026-11-15 @ 4499244 (main, first GitHub Actions CI run that passed): 1031 unit tests, 0 failing; lint ok; screenshot previews valid (About refs now pinned to a fixed version); ivarna debug build ok; 7 shell tests pass. Build APKs run: debug + release, the release signed with Akane.p12 (same certificate as local builds).
 - 2026-11-06 @ 142c0d8 (feat/terminal-first): 1023 unit tests, 0 failing; lint 0 errors, 124 warnings; assemble ok; screenshot previews valid (3 extra-keys refs updated).
 - 2026-11-05 @ 3bb7d3e (feat/terminal-first, PR #2 review fixes): 1023 unit tests, 0 failing; lint 0 errors, 124 warnings (was 127); assemble ok; 38 screenshot previews valid; 7 shell tests pass.
 - 2026-11-05 (feat/terminal-first, Akane-iro): 961 unit tests, 0 failing; lint, assemble, screenshots valid; shell tests pass.
@@ -81,6 +80,8 @@ _Updated: 2026-11-05 · rewrite this section, don't append_
 - 2026-11-06: the extra-keys Tab key is labelled TAB instead of Termux's ↹ (user asked for "a TAB button": the glyph came out small in the fallback font and didn't read as one); the other Termux glyphs (arrows, ―) stay.
 - 2026-11-06: v2.2.0 (23) is the first release as AkaTerminal (user request): the GitHub repo is renamed to `akane599/AkaTerminal` (old URLs redirect), releases are titled "AkaTerminal v<ver>" with `AkaTerminal-v<ver>[-debug].apk` assets, and it is published as a pre-release until the user has tried it on the phone (the release rule's device check). It's the first release signed with the user's key, so v2.1.x installs must uninstall first (the notes and README say so).
 - 2026-11-07: the soft keyboard resizes the terminal once per show/hide (bottom inset = max of the IME animation's source and target), not per animation frame, because the frame-by-frame burst made tmux panes and full-screen Codex re-anchor until they no longer filled the screen; a keyboard pan (fixed grid, view slides up) also fixed it but felt odd to the user. Pty resizes are coalesced (`PtySizeCoalescer`, 120 ms) in the vendored terminal-emulator, and the screen's own SIGWINCH fires only for a new pid. Terminal settings can pick a monospace font file (`TerminalFont`); JetBrainsMono Nerd Font stays the default.
+- 2026-11-15: main is reset to 461755f at the user's request: the five chroot mount-isolation commits after it (2c1867f..b845330, 2026-11-07/08) are dropped from main and origin and kept only in the local branch `backup/main-before-reset`; the empty `V2.2.2` release/tag made in the GitHub UI is deleted. v2.2.2 (24) is cut from there (no v2.2.1). GitHub Actions: `ci.yml` (pushes to main, PRs) and a manual Build APKs workflow, because the user wants APKs buildable from the repo; its release APK is signed with Akane.p12 through `RELEASE_*` repo secrets, uploaded at the user's request by a script that never prints the values.
+- 2026-11-15: `MountLockTest` runs the chroot lock with GNU mkdir (`/usr/bin/gnumkdir`, first on the scripts' PATH), because uutils coreutils 0.10.0's mkdir (Ubuntu 26.04's default, also on GitHub's runners and this dev machine) is not atomic under a race: both of two concurrent `mkdir d` can exit 0 (97/300 races on the runner), so the two-breakers case failed on every CI run. On Android the scripts use toybox/busybox mkdir (atomic), so the app isn't affected; the lock code is unchanged.
 
 ## Audit status
 | Area | Last run | Result | How |
