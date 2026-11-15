@@ -29,6 +29,12 @@ runs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq bison patch python3 binutils xz-utils
         fi
+        # uutils mkdir (Ubuntu 26.04's default) isn't atomic under a race; MountLockTest runs the
+        # chroot lock with GNU mkdir (gnumkdir), as Android's toybox/busybox mkdir behaves.
+        if mkdir --version 2>/dev/null | grep -q uutils && ! command -v gnumkdir >/dev/null; then
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq gnu-coreutils
+        fi
 
     - uses: actions/setup-java@v4
       with:

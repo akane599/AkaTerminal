@@ -22,6 +22,15 @@ class MountLockTest {
     private lateinit var tmp: File
     private lateinit var chroot: File
     private lateinit var lib: File
+    private lateinit var binDir: File
+
+    /**
+     * On Android these scripts run with toybox/busybox mkdir, which is atomic. uutils coreutils'
+     * mkdir (Ubuntu 26.04's default, also on GitHub's ubuntu-latest runners) is not: two
+     * processes racing `mkdir d` can both exit 0, and on CI both breakers "won" every run. So the
+     * scripts get GNU mkdir (Ubuntu ships it as gnumkdir) first on their PATH.
+     */
+    private var atomicMkdir = true
     private val lock get() = File(chroot, ".flux_mount.lock")
 
     private val scripts = listOf(
@@ -40,7 +49,24 @@ class MountLockTest {
         tmp = Files.createTempDirectory("flux-lock-test").toFile()
         chroot = File(tmp, "chrootX").apply { mkdirs() }
         lib = File(tmp, "lock.sh").apply { writeText(block("fluxlinux_chroot.sh")) }
+        binDir = File(tmp, "bin").apply { mkdirs() }
+        val gnuMkdir = File("/usr/bin/gnumkdir")
+        if (gnuMkdir.canExecute()) {
+            File(binDir, "mkdir").apply {
+                writeText("#!/bin/sh\nexec ${gnuMkdir.absolutePath} \"\$@\"\n")
+                setExecutable(true)
+            }
+        } else {
+            atomicMkdir = !systemMkdirIsUutils()
+        }
     }
+
+    private fun systemMkdirIsUutils(): Boolean = runCatching {
+        val p = ProcessBuilder("mkdir", "--version").redirectErrorStream(true).start()
+        val out = p.inputStream.bufferedReader().readText()
+        p.waitFor(10, TimeUnit.SECONDS)
+        out.contains("uutils")
+    }.getOrDefault(false)
 
     @After
     fun tearDown() {
@@ -72,6 +98,10 @@ class MountLockTest {
     private fun shell(cmd: String): Process =
         ProcessBuilder("/bin/sh", "-c", cmd, "fluxlinux_chroot.sh", lib.absolutePath, chroot.absolutePath)
             .redirectErrorStream(true)
+            .apply {
+                val path = System.getenv("PATH") ?: "/usr/bin:/bin"
+                environment()["PATH"] = binDir.absolutePath + File.pathSeparator + path
+            }
             .start()
 
     private fun acquire(): Int {
@@ -148,6 +178,7 @@ class MountLockTest {
 
     @Test
     fun twoBreakersOfOneStaleLock_onlyOneWins() {
+        assumeTrue("needs an atomic mkdir: uutils mkdir races (install gnu-coreutils)", atomicMkdir)
         lock.mkdirs() // owner-less: stale after ~3 s
         val hold = ". \"\$1\"; if mount_lock \"\$2\"; then echo WON; sleep 25; else echo LOST; fi; :"
         val a = shell(hold)
